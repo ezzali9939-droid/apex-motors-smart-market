@@ -170,7 +170,7 @@
 
         .search-box-container {
             max-width: 760px;
-            margin: 0 auto 35px;
+            margin: 0 auto 20px;
             position: relative;
         }
 
@@ -213,6 +213,64 @@
         .cam-btn:hover {
             transform: scale(1.2);
             opacity: 1;
+        }
+
+        .image-preview-container {
+            max-width: 760px;
+            margin: 12px auto 0;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 12px;
+            padding: 8px 14px;
+            backdrop-filter: blur(10px);
+        }
+
+        .preview-img {
+            width: 46px;
+            height: 46px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid var(--neon-blue);
+        }
+
+        .preview-details {
+            flex: 1;
+            font-size: 0.85rem;
+            color: #e2e8f0;
+        }
+
+        .preview-remove-btn {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .preview-remove-btn:hover {
+            background: rgba(239, 68, 68, 0.4);
+        }
+
+        .detected-badge-box {
+            text-align: center;
+            margin: 15px 0;
+            display: none;
+        }
+
+        .detected-badge {
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid var(--neon-blue);
+            color: #fff;
+            padding: 6px 18px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            display: inline-block;
         }
 
         .results-header {
@@ -309,6 +367,19 @@
             font-size: 0.95rem;
         }
 
+        .error-box {
+            max-width: 760px;
+            margin: 25px auto;
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            color: #fca5a5;
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 0.92rem;
+            display: none;
+        }
+
         .loading-spinner {
             text-align: center;
             color: var(--neon-blue);
@@ -351,26 +422,143 @@
         <div class="search-box-container">
             <form class="search-form" id="search-form" onsubmit="event.preventDefault(); performSearch();">
                 <input type="text" id="search-input" class="search-input" placeholder="Type your car requirements and press Enter..." autocomplete="off">
-                <button type="button" class="cam-btn" title="Simulate image identification" onclick="triggerPresetSearch()">📷</button>
+                <button type="button" class="cam-btn" id="cam-btn" title="Upload car image for AI recognition" onclick="document.getElementById('image-input').click();">📷</button>
+                <input type="file" id="image-input" accept="image/*" style="display: none;">
             </form>
+
+            <div class="image-preview-container" id="image-preview-container">
+                <img id="preview-img" class="preview-img" src="" alt="Selected vehicle preview">
+                <div class="preview-details">
+                    <strong id="preview-filename">car.jpg</strong>
+                    <div style="font-size: 0.75rem; color: #94a3b8;" id="preview-filesize">Image selected</div>
+                </div>
+                <button type="button" class="preview-remove-btn" onclick="clearSelectedImage()">✕ Remove</button>
+            </div>
+        </div>
+
+        <div class="detected-badge-box" id="detected-badge-box">
+            <span class="detected-badge" id="detected-badge">📷 Detected Vehicle: --</span>
         </div>
 
         <div class="loading-spinner" id="loading-spinner">
             ⚡ Searching market & running CatBoost valuation...
         </div>
 
+        <div class="error-box" id="error-box"></div>
+
         <div class="results-header" id="results-header"></div>
         <div id="results-container"></div>
 
         <div class="empty-state" id="empty-state">
-            Type your search query above and press <strong>Enter</strong> for instant search (e.g. <em>Toyota Corolla</em>, <em>Kia Sportage</em>, <em>Mercedes C180</em>)
+            Type your search query above and press <strong>Enter</strong> (e.g. <em>Toyota Corolla</em>, <em>Kia Sportage</em>, <em>Mercedes C180</em>), or click the camera icon 📷 to analyze a vehicle photo.
         </div>
     </div>
 
     <script>
+        let activeImageFile = null;
+
+        document.getElementById('image-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) {
+                // Canceling file selection does nothing, no request or state change
+                return;
+            }
+            if (!file.type.startsWith('image/')) {
+                showError("Selected file is not an image. Please select a JPG or PNG file.");
+                return;
+            }
+
+            activeImageFile = file;
+            showImagePreview(file);
+            processUploadedImage(file);
+        });
+
+        function showImagePreview(file) {
+            const previewBox = document.getElementById('image-preview-container');
+            const previewImg = document.getElementById('preview-img');
+            const filenameEl = document.getElementById('preview-filename');
+            const filesizeEl = document.getElementById('preview-filesize');
+
+            filenameEl.textContent = file.name;
+            filesizeEl.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                previewImg.src = e.target.result;
+                previewBox.style.display = 'flex';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearSelectedImage() {
+            activeImageFile = null;
+            document.getElementById('image-input').value = '';
+            document.getElementById('image-preview-container').style.display = 'none';
+            document.getElementById('detected-badge-box').style.display = 'none';
+            hideError();
+        }
+
+        function showError(msg) {
+            const errBox = document.getElementById('error-box');
+            errBox.textContent = msg;
+            errBox.style.display = 'block';
+            document.getElementById('loading-spinner').style.display = 'none';
+        }
+
+        function hideError() {
+            const errBox = document.getElementById('error-box');
+            errBox.style.display = 'none';
+            errBox.textContent = '';
+        }
+
+        async function processUploadedImage(file) {
+            hideError();
+            const spinner = document.getElementById("loading-spinner");
+            const header = document.getElementById("results-header");
+            const container = document.getElementById("results-container");
+            const emptyState = document.getElementById("empty-state");
+            const badgeBox = document.getElementById("detected-badge-box");
+            const badge = document.getElementById("detected-badge");
+
+            spinner.innerHTML = "⚡ Analyzing vehicle image with Vision AI...";
+            spinner.style.display = "block";
+            header.style.display = "none";
+            container.innerHTML = "";
+            emptyState.style.display = "none";
+            badgeBox.style.display = "none";
+
+            const formData = new FormData();
+            formData.append("image", file);
+
+            try {
+                const response = await fetch('/api/classify', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    showError(`⚠️ ${data.error || "Unable to identify vehicle in image."}`);
+                    return;
+                }
+
+                const detectedLabel = data.label;
+                const confidence = data.confidence ? ` (${data.confidence}%)` : '';
+                badge.innerHTML = `📷 Detected Vehicle: <strong>${detectedLabel}</strong>${confidence}`;
+                badgeBox.style.display = "block";
+
+                // Automatically trigger market search for detected vehicle
+                document.getElementById("search-input").value = detectedLabel;
+                performSearch(detectedLabel);
+            } catch (err) {
+                showError("⚠️ Network error during image processing. Please check connection and try again.");
+            }
+        }
+
         async function performSearch(queryText = null) {
+            hideError();
             const input = document.getElementById("search-input");
-            const query = queryText || input.value.trim() || "toyota corolla";
+            const query = queryText || input.value.trim() || "kia sportage";
             if (!queryText) input.value = query;
 
             const spinner = document.getElementById("loading-spinner");
@@ -378,6 +566,7 @@
             const container = document.getElementById("results-container");
             const emptyState = document.getElementById("empty-state");
 
+            spinner.innerHTML = "⚡ Searching market & running CatBoost valuation...";
             spinner.style.display = "block";
             header.style.display = "none";
             container.innerHTML = "";
@@ -392,7 +581,7 @@
                 header.style.display = "block";
 
                 if (!data.results || data.results.length === 0) {
-                    container.innerHTML = `<div class="empty-state">No matching vehicle listings found. Try another search!</div>`;
+                    container.innerHTML = `<div class="empty-state">No matching vehicle listings found. Try another search query!</div>`;
                     return;
                 }
 
@@ -406,6 +595,26 @@
                     } else if (r.deal_label.includes("Overpriced")) {
                         badgeClass = "deal-badge-overpriced";
                         badgeText = "🔴 Overpriced";
+                    }
+
+                    // Format mileage accurately
+                    let mileageText = "Not provided";
+                    if (r.mileage === 0) {
+                        mileageText = "0 km";
+                    } else if (r.mileage && r.mileage > 0) {
+                        mileageText = `${Number(r.mileage).toLocaleString()} km`;
+                    }
+
+                    // Format listed price
+                    let priceText = "Price on request";
+                    if (r.price && r.price > 0) {
+                        priceText = `${Number(r.price).toLocaleString()} EGP`;
+                    }
+
+                    // Format predicted fair price
+                    let fairPriceText = "N/A";
+                    if (r.predicted_fair_price && r.predicted_fair_price > 0) {
+                        fairPriceText = `${Number(r.predicted_fair_price).toLocaleString()} EGP`;
                     }
 
                     let actionHtml = "";
@@ -422,20 +631,20 @@
                             <span style="font-size: 1.3rem; font-weight: 700; color: #fff;">${r.name}</span>
                             <div><span class="${badgeClass}">${badgeText}</span></div>
                         </div>
-                        <div style="display: flex; gap: 15px; margin-top: 8px; color: #94a3b8; font-size: 0.88rem;">
+                        <div style="display: flex; gap: 15px; margin-top: 8px; color: #94a3b8; font-size: 0.88rem; flex-wrap: wrap;">
                             <span>⚙️ ${r.transmission}</span>
-                            <span>🛣️ ${Number(r.mileage).toLocaleString()} km</span>
+                            <span>🛣️ ${mileageText}</span>
                             <span>📍 ${r.location}</span>
                             <span>⚡ Match: ${r.match_score}%</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
                             <div>
                                 <span style="color: #94a3b8; font-size: 0.82rem;">Listed Price:</span><br>
-                                <strong style="color: #fff; font-size: 1.2rem;">${Number(r.price).toLocaleString()} EGP</strong>
+                                <strong style="color: #fff; font-size: 1.2rem;">${priceText}</strong>
                             </div>
                             <div>
                                 <span style="color: #94a3b8; font-size: 0.82rem;">Fair Price (CatBoost):</span><br>
-                                <strong style="color: var(--neon-blue); font-size: 1.2rem;">${Number(r.predicted_fair_price).toLocaleString()} EGP</strong>
+                                <strong style="color: var(--neon-blue); font-size: 1.2rem;">${fairPriceText}</strong>
                             </div>
                             <div>
                                 ${actionHtml}
@@ -448,10 +657,6 @@
                 spinner.style.display = "none";
                 container.innerHTML = `<div class="empty-state" style="color: #fca5a5;">⚠️ Failed to load search results. Please try again.</div>`;
             }
-        }
-
-        function triggerPresetSearch() {
-            performSearch("toyota corolla");
         }
     </script>
 </body>
