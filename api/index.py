@@ -10,7 +10,13 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import numpy as np
 import joblib
-from PIL import Image
+
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+    Image = None
 
 # Register ApexProductionValuationEngine in __main__ for joblib unpickling
 class ApexProductionValuationEngine:
@@ -328,7 +334,7 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
             print("CatBoost valuation error:", e)
             predicted_prices = [None] * len(df)
     else:
-        # Valuation matrix for serverless environment
+        # Matrix valuation for serverless environment
         predicted_prices = []
         for idx, r in df.iterrows():
             b = str(r.get("brand", "Kia"))
@@ -397,6 +403,9 @@ def health():
 
 @app.route("/api/classify", methods=["POST"])
 def classify_image():
+    if not HAS_PIL or Image is None:
+        return jsonify({"success": False, "error": "Image processing library is unavailable."}), 500
+
     if "image" not in request.files:
         return jsonify({"success": False, "error": "No image file provided in request."}), 400
     
