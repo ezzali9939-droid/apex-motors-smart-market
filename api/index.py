@@ -67,7 +67,7 @@ class DualPlatformMarketScraper:
         }
         self.base_url = "https://eg.hatla2ee.com"
 
-    def scrape_hatla2ee(self, brand: str, model: str = None) -> list:
+    def scrape_hatla2ee(self, brand: str, model: str = None, page: int = 1) -> list:
         records = []
         if not brand:
             return []
@@ -78,6 +78,8 @@ class DualPlatformMarketScraper:
         target_url = f"{self.base_url}/ar/car/{clean_b}"
         if clean_m:
             target_url += f"/{clean_m.replace(' ', '-')}"
+        if page > 1:
+            target_url += f"/page/{page}"
 
         try:
             resp = self.session.get(target_url, headers=self.headers, timeout=12)
@@ -115,6 +117,20 @@ class DualPlatformMarketScraper:
                             if t and not any(k in t.lower() for k in ["slide", "previous", "next", "عرض الكل"]):
                                 title_text = t
                                 break
+
+                        # Image extraction
+                        image_url = None
+                        for img in card.find_all("img"):
+                            src = img.get("src") or img.get("data-src") or ""
+                            if "listing_image" in src or "hatla2ee.com/listing" in src:
+                                image_url = src
+                                break
+                        if not image_url:
+                            for img in card.find_all("img"):
+                                src = img.get("src") or img.get("data-src") or ""
+                                if src and not any(x in src for x in ["logo", "icon", "agency"]):
+                                    image_url = src
+                                    break
 
                         card_text_space = normalize_digits(card.get_text(" ", strip=True))
                         card_text_bar = normalize_digits(card.get_text(" | ", strip=True))
@@ -183,7 +199,8 @@ class DualPlatformMarketScraper:
                             "condition_tag": condition_tag,
                             "trim_tier": "Topline",
                             "source": "Hatla2ee Market",
-                            "item_url": full_link
+                            "item_url": full_link,
+                            "image_url": image_url
                         }
                     except Exception:
                         pass
@@ -214,15 +231,19 @@ if HAS_CATBOOST:
         except Exception:
             val_engine = None
 
-def calculate_match_score(query: str, item_name: str, brand: str, model: str, year: int | None) -> float:
+def calculate_match_score(query: str, item_name: str, brand: str, model: str, year: int | None) -> float | None:
     if not query:
-        return 0.0
-    q_norm = normalize_digits(query.lower())
+        return None
+    q_norm = normalize_digits(query.lower().strip())
+    # Omit match score for brand-only queries or short broad queries
+    if q_norm in ["kia", "toyota", "mercedes", "hyundai", "bmw", "nissan", "audi", "كيا", "تويوتا", "مرسيدس", "هيونداي"]:
+        return None
+
     q_tokens = set(re.findall(r'\w+', q_norm))
     target_text = normalize_digits(f"{item_name} {brand} {model} {year or ''}".lower())
     t_tokens = set(re.findall(r'\w+', target_text))
     if not q_tokens:
-        return 0.0
+        return None
     overlap = len(q_tokens.intersection(t_tokens))
     score = (overlap / len(q_tokens)) * 100.0
     if brand.lower() in q_norm:
@@ -301,13 +322,17 @@ def process_search_results(ads: list, query: str = "") -> list:
         
         fair_price_val = predicted_prices[idx] if (idx < len(predicted_prices) and predicted_prices[idx] is not None) else None
 
-        deal_label = "Fair Market Price ⚖️"
-        if price_val is not None and fair_price_val is not None:
+        # FIX MISLEADING STATUS: If valuation is unavailable, set deal_label to "Not assessed"
+        if fair_price_val is not None and price_val is not None:
             pct = (price_val - fair_price_val) / fair_price_val
             if pct <= -0.05:
                 deal_label = "Great Deal 🔥"
             elif pct >= 0.08:
                 deal_label = "Overpriced ⚠️"
+            else:
+                deal_label = "Fair Market Price ⚖️"
+        else:
+            deal_label = "Not assessed"
 
         src_mileage = r.get("mileage")
         mileage_val = float(src_mileage) if src_mileage is not None else None
@@ -333,7 +358,8 @@ def process_search_results(ads: list, query: str = "") -> list:
             "transmission": str(r.get("transmission", "Automatic")),
             "match_score": m_score,
             "item_url": url if valid_url else None,
-            "has_valid_url": valid_url
+            "has_valid_url": valid_url,
+            "image_url": r.get("image_url")
         })
     return out_records
 
@@ -395,11 +421,15 @@ def classify_image():
 @app.route("/api/search", methods=["GET"])
 def search():
     query = request.args.get("q", "").strip()
+    page = int(request.args.get("page", 1))
+
     if not query:
         return jsonify({
             "query": "",
             "brand": "",
             "model": "",
+            "page": page,
+            "has_more": False,
             "results": []
         })
 
@@ -470,15 +500,31 @@ def search():
         else:
             detected_brand = query
 
-    ads = live_engine.scrape_hatla2ee(detected_brand, detected_model)
-    if ads:
-        ads = sorted(ads, key=lambda x: x.get("year", 0), reverse=True)[:10]
+    # Fetch targeted page
+    ads = live_engine.scrape_hatla2ee(detected_brand, detected_model, page=page)
+    
+    # Target batch size 24
+    if len(ads) < 24:
+        next_ads = live_engine.scrape_hatla2ee(detected_brand, detected_model, page=page+1)
+        existing_urls = set(a.get("item_url") for a in ads)
+        for a in next_ads:
+            if a.get("item_url") not in existing_urls:
+                ads.append(a)
+                existing_urls.add(a.get("item_url"))
+            if len(ads) >= 24:
+                break
+
+    ads = ads[:24]
+    has_more = len(ads) >= 20
 
     formatted_results = process_search_results(ads, query=query)
     return jsonify({
         "query": query,
         "brand": detected_brand,
         "model": detected_model or "",
+        "page": page,
+        "has_more": has_more,
+        "total_loaded": len(formatted_results),
         "results": formatted_results
     })
 
