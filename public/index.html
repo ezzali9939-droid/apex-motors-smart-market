@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex Motors | Smart Car Market</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚗</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-blue: #38bdf8;
+            --darkest-bg: #030712;
+            --white: #f7f7f7;
+            --muted: #a9adb5;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--darkest-bg);
+            color: var(--white);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        .background-car {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image: url("/mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            opacity: .85;
+        }
+
+        .background-car:before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(90deg, rgba(3,7,18,.85) 0%, rgba(3,7,18,.45) 48%, rgba(3,7,18,.85) 100%),
+                linear-gradient(180deg, rgba(3,7,18,.4) 0%, rgba(3,7,18,.2) 46%, rgba(3,7,18,.9) 100%);
+        }
+
+        .background-car:after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 38%, rgba(56,189,248,.08), transparent 40%);
+        }
+
+        .main-container {
+            position: relative;
+            z-index: 2;
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 2.5rem 1.5rem 4rem;
+        }
+
+        .hero-box {
+            position: relative;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            margin: 0 auto 1.5rem;
+        }
+
+        .hero-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .hero-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 16px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.7);
+            color: #e2e8f0;
+            font-size: .72rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            backdrop-filter: blur(10px);
+        }
+
+        .hero-title {
+            margin: 0;
+            color: #fff;
+            font-size: clamp(2.6rem, 5vw, 4.2rem);
+            line-height: 1.1;
+            font-weight: 800;
+            letter-spacing: -2px;
+            text-shadow: 0 10px 40px rgba(0,0,0,.9);
+        }
+
+        .hero-title span {
+            color: var(--neon-blue);
+            text-shadow: 0 0 30px rgba(56, 189, 248, 0.5);
+        }
+
+        .hero-subtitle {
+            color: #d1d5db;
+            font-size: .95rem;
+            max-width: 620px;
+            margin: 12px auto 0;
+            line-height: 1.55;
+            text-shadow: 0 3px 18px #000;
+        }
+
+        .hero-line {
+            width: 54px;
+            height: 3px;
+            background: var(--neon-blue);
+            border-radius: 99px;
+            margin: 12px auto 0;
+            box-shadow: 0 0 20px rgba(56,189,248,.5);
+        }
+
+        .feature-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            max-width: 760px;
+            margin: 16px auto 25px;
+            gap: 0;
+        }
+
+        .feature-item {
+            text-align: center;
+            padding: 5px 18px;
+            border-right: 1px solid rgba(255,255,255,.14);
+        }
+
+        .feature-item:last-child {
+            border-right: 0;
+        }
+
+        .feature-icon {
+            color: var(--neon-blue);
+            font-size: 1rem;
+            margin-bottom: 3px;
+        }
+
+        .feature-title {
+            color: #fff;
+            font-size: .78rem;
+            font-weight: 700;
+        }
+
+        .feature-desc {
+            color: #9ca3af;
+            font-size: .65rem;
+            margin-top: 2px;
+        }
+
+        .search-box-container {
+            max-width: 760px;
+            margin: 0 auto 35px;
+            position: relative;
+        }
+
+        .search-form {
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.92) 0%, rgba(3, 7, 18, 0.96) 100%);
+            border: 1.2px solid rgba(56, 189, 248, 0.4);
+            border-radius: 999px;
+            box-shadow: 0 16px 45px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(56, 189, 248, 0.2);
+            backdrop-filter: blur(18px);
+            padding: 0 16px 0 24px;
+            display: flex;
+            align-items: center;
+            height: 54px;
+            gap: 12px;
+        }
+
+        .search-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #ffffff;
+            font-size: 0.95rem;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .search-input::placeholder {
+            color: #94a3b8;
+        }
+
+        .cam-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 1.25rem;
+            opacity: 0.85;
+            transition: transform 0.2s ease;
+        }
+
+        .cam-btn:hover {
+            transform: scale(1.2);
+            opacity: 1;
+        }
+
+        .results-header {
+            color: #fff;
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin: 35px auto 15px;
+            max-width: 760px;
+            display: none;
+        }
+
+        .car-card {
+            background: rgba(10, 12, 16, 0.85);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 18px;
+            padding: 22px;
+            margin-bottom: 16px;
+            box-shadow: 0 16px 40px rgba(0,0,0,.55);
+            backdrop-filter: blur(14px);
+            transition: all 0.2s ease;
+            max-width: 760px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .car-card:hover {
+            border-color: rgba(56, 189, 248, 0.35);
+            transform: translateY(-2px);
+        }
+
+        .deal-badge-great {
+            background: rgba(34,197,94,.15);
+            border: 1px solid rgba(34,197,94,.65);
+            color: #86efac;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: .85rem;
+        }
+
+        .deal-badge-overpriced {
+            background: rgba(239,68,68,.15);
+            border: 1px solid rgba(239,68,68,.65);
+            color: #fca5a5;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: .85rem;
+        }
+
+        .deal-badge-fair {
+            background: rgba(56,189,248,.15);
+            border: 1px solid rgba(56,189,248,.65);
+            color: #bae6fd;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: .85rem;
+        }
+
+        .view-btn {
+            display: inline-block;
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid var(--neon-blue);
+            color: #fff;
+            padding: 7px 16px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .view-btn:hover {
+            background: rgba(56, 189, 248, 0.3);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+        }
+
+        .unavailable-badge {
+            display: inline-block;
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #8b929a;
+            margin-top: 50px;
+            font-size: 0.95rem;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            color: var(--neon-blue);
+            font-weight: 600;
+            margin: 40px 0;
+            display: none;
+        }
+
+        @media (max-width: 640px) {
+            .feature-row {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 15px;
+            }
+            .feature-item {
+                border-right: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="background-car"></div>
+
+    <div class="main-container">
+        <div class="hero-box">
+            <div class="hero-content">
+                <div class="hero-kicker">✦ SMART CAR MARKET</div>
+                <h1 class="hero-title">Apex <span>Motors</span></h1>
+                <div class="hero-line"></div>
+                <div class="hero-subtitle">Find the right car, get expert insights, and make smarter decisions with the power of AI.</div>
+            </div>
+        </div>
+
+        <div class="feature-row">
+            <div class="feature-item"><div class="feature-icon">⌁</div><div class="feature-title">Analysis</div><div class="feature-desc">Understand your needs</div></div>
+            <div class="feature-item"><div class="feature-icon">▧</div><div class="feature-title">Image Detection</div><div class="feature-desc">Identify car details</div></div>
+            <div class="feature-item"><div class="feature-icon">◇</div><div class="feature-title">Price Prediction</div><div class="feature-desc">Get fair market value</div></div>
+            <div class="feature-item"><div class="feature-icon">▥</div><div class="feature-title">Smart Results</div><div class="feature-desc">Best matches for you</div></div>
+        </div>
+
+        <div class="search-box-container">
+            <form class="search-form" id="search-form" onsubmit="event.preventDefault(); performSearch();">
+                <input type="text" id="search-input" class="search-input" placeholder="Type your car requirements and press Enter..." autocomplete="off">
+                <button type="button" class="cam-btn" title="Simulate image identification" onclick="triggerPresetSearch()">📷</button>
+            </form>
+        </div>
+
+        <div class="loading-spinner" id="loading-spinner">
+            ⚡ Searching market & running CatBoost valuation...
+        </div>
+
+        <div class="results-header" id="results-header"></div>
+        <div id="results-container"></div>
+
+        <div class="empty-state" id="empty-state">
+            Type your search query above and press <strong>Enter</strong> for instant search (e.g. <em>Toyota Corolla</em>, <em>Kia Sportage</em>, <em>Mercedes C180</em>)
+        </div>
+    </div>
+
+    <script>
+        async function performSearch(queryText = null) {
+            const input = document.getElementById("search-input");
+            const query = queryText || input.value.trim() || "toyota corolla";
+            if (!queryText) input.value = query;
+
+            const spinner = document.getElementById("loading-spinner");
+            const header = document.getElementById("results-header");
+            const container = document.getElementById("results-container");
+            const emptyState = document.getElementById("empty-state");
+
+            spinner.style.display = "block";
+            header.style.display = "none";
+            container.innerHTML = "";
+            emptyState.style.display = "none";
+
+            try {
+                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+
+                spinner.style.display = "none";
+                header.textContent = `🎯 Live Market Results for: "${data.query || query}"`;
+                header.style.display = "block";
+
+                if (!data.results || data.results.length === 0) {
+                    container.innerHTML = `<div class="empty-state">No matching vehicle listings found. Try another search!</div>`;
+                    return;
+                }
+
+                data.results.forEach(r => {
+                    let badgeClass = "deal-badge-fair";
+                    let badgeText = "🟡 Fair Price";
+
+                    if (r.deal_label.includes("Great Deal")) {
+                        badgeClass = "deal-badge-great";
+                        badgeText = "🟢 Great Deal";
+                    } else if (r.deal_label.includes("Overpriced")) {
+                        badgeClass = "deal-badge-overpriced";
+                        badgeText = "🔴 Overpriced";
+                    }
+
+                    let actionHtml = "";
+                    if (r.has_valid_url && r.item_url) {
+                        actionHtml = `<a href="${r.item_url}" target="_blank" rel="noopener noreferrer" class="view-btn">View Listing ↗</a>`;
+                    } else {
+                        actionHtml = `<div class="unavailable-badge" title="Direct vehicle detail link is unavailable for this fallback record">⚠️ Listing URL Unavailable</div>`;
+                    }
+
+                    const card = document.createElement("div");
+                    card.className = "car-card";
+                    card.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 1.3rem; font-weight: 700; color: #fff;">${r.name}</span>
+                            <div><span class="${badgeClass}">${badgeText}</span></div>
+                        </div>
+                        <div style="display: flex; gap: 15px; margin-top: 8px; color: #94a3b8; font-size: 0.88rem;">
+                            <span>⚙️ ${r.transmission}</span>
+                            <span>🛣️ ${Number(r.mileage).toLocaleString()} km</span>
+                            <span>📍 ${r.location}</span>
+                            <span>⚡ Match: ${r.match_score}%</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <span style="color: #94a3b8; font-size: 0.82rem;">Listed Price:</span><br>
+                                <strong style="color: #fff; font-size: 1.2rem;">${Number(r.price).toLocaleString()} EGP</strong>
+                            </div>
+                            <div>
+                                <span style="color: #94a3b8; font-size: 0.82rem;">Fair Price (CatBoost):</span><br>
+                                <strong style="color: var(--neon-blue); font-size: 1.2rem;">${Number(r.predicted_fair_price).toLocaleString()} EGP</strong>
+                            </div>
+                            <div>
+                                ${actionHtml}
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (err) {
+                spinner.style.display = "none";
+                container.innerHTML = `<div class="empty-state" style="color: #fca5a5;">⚠️ Failed to load search results. Please try again.</div>`;
+            }
+        }
+
+        function triggerPresetSearch() {
+            performSearch("toyota corolla");
+        }
+    </script>
+</body>
+</html>
