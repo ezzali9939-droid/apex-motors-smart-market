@@ -4,4 +4,3 @@ numpy
 joblib
 pillow
 flask
-catboost
