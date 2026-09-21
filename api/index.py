@@ -336,9 +336,9 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
     # Ensure every record receives a valid fair price prediction
     if not predicted_prices or len(predicted_prices) != len(df) or any(p is None for p in predicted_prices):
         new_preds = []
-        for idx, r in df.iterrows():
-            if idx < len(predicted_prices) and predicted_prices[idx] is not None:
-                new_preds.append(predicted_prices[idx])
+        for i, (_, r) in enumerate(df.iterrows()):
+            if i < len(predicted_prices) and predicted_prices[i] is not None:
+                new_preds.append(predicted_prices[i])
             else:
                 b = str(r.get("brand", "Kia"))
                 m = str(r.get("model", "Sportage"))
