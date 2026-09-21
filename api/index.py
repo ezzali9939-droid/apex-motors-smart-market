@@ -6,7 +6,6 @@ from urllib.parse import urljoin, urlparse
 from flask import Flask, request, jsonify
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
 import numpy as np
 import joblib
 
@@ -17,7 +16,6 @@ except ImportError:
     HAS_PIL = False
     Image = None
 
-# Register ApexProductionValuationEngine in __main__ for joblib unpickling
 class ApexProductionValuationEngine:
     def __init__(self, model, num_cols, cat_cols, medians):
         self.model = model
@@ -35,25 +33,7 @@ except ImportError:
     Pool = None
     CatBoostRegressor = None
 
-try:
-    import torch
-    from transformers import AutoImageProcessor, AutoModelForImageClassification
-    HAS_TORCH = True
-except ImportError:
-    HAS_TORCH = False
-    torch = None
-
 VISION_MODEL_NAME = "dima806/car_models_image_detection"
-img_processor, car_vision_model = None, None
-
-if HAS_TORCH:
-    try:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        img_processor = AutoImageProcessor.from_pretrained(VISION_MODEL_NAME)
-        car_vision_model = AutoModelForImageClassification.from_pretrained(VISION_MODEL_NAME).to(device)
-        car_vision_model.eval()
-    except Exception:
-        img_processor, car_vision_model = None, None
 
 app = Flask(__name__)
 
@@ -105,14 +85,12 @@ class DualPlatformMarketScraper:
                 soup = BeautifulSoup(resp.content, "html.parser")
                 records_by_url = {}
 
-                # Look for top-level listing cards
                 cards = soup.find_all(lambda tag: tag.name in ['div', 'article', 'section'] and tag.get('class') and 'bg-card' in tag.get('class'))
                 if not cards:
                     cards = soup.find_all(lambda tag: tag.name in ['div', 'article', 'section'] and tag.get('class') and any('unit' in c.lower() or 'card' in c.lower() for c in tag.get('class')))
 
                 for card in cards:
                     try:
-                        # Find valid detail link
                         detail_a = None
                         for a in card.find_all("a", href=True):
                             href = a["href"].strip()
@@ -131,7 +109,6 @@ class DualPlatformMarketScraper:
                         if full_link in records_by_url:
                             continue
 
-                        # Extract Title
                         title_text = ""
                         for a in card.find_all("a", href=True):
                             t = a.get_text(strip=True)
@@ -142,7 +119,6 @@ class DualPlatformMarketScraper:
                         card_text_space = normalize_digits(card.get_text(" ", strip=True))
                         card_text_bar = normalize_digits(card.get_text(" | ", strip=True))
 
-                        # Listed Price
                         price = None
                         p_match = re.search(r'([\d,]{4,12})\s*(?:جنيه|EGP|ج\.م|L\.E)', card_text_space)
                         if p_match:
@@ -153,13 +129,11 @@ class DualPlatformMarketScraper:
                             except ValueError:
                                 price = None
 
-                        # Year
                         year = None
                         y_match = re.search(r'\b(19\d{2}|20\d{2})\b', card_text_space)
                         if y_match:
                             year = int(y_match.group(1))
 
-                        # Mileage
                         mileage = None
                         km_match = re.search(r'([\d,]{1,8})\s*(?:کم|كم|km|كيلومتر|كيلو)', card_text_space, re.IGNORECASE)
                         if km_match:
@@ -171,12 +145,10 @@ class DualPlatformMarketScraper:
                         elif re.search(r'\b0\s*(?:کم|كم|km)\b', card_text_space, re.IGNORECASE):
                             mileage = 0.0
 
-                        # Transmission
                         transmission = "Automatic"
                         if any(t in card_text_space for t in ["يدوي", "مانيوال", "Manual"]):
                             transmission = "Manual"
 
-                        # Fuel Type
                         fuel_type = "Benzine"
                         if "هجين" in card_text_space or "Hybrid" in card_text_space:
                             fuel_type = "Hybrid"
@@ -185,10 +157,8 @@ class DualPlatformMarketScraper:
                         elif "غاز" in card_text_space or "Gas" in card_text_space:
                             fuel_type = "Gas"
 
-                        # Condition Tag
                         condition_tag = "Fabrika" if "فابريكا" in card_text_space else "Used"
 
-                        # Location
                         tokens = [t.strip() for t in card_text_bar.split('|') if t.strip()]
                         location = "Cairo"
                         known_locs = ["القاهرة", "الجيزة", "الإسكندرية", "التجمع", "المهندسين", "دمياط", "منوفية", "الشرقية", "الدقهلية", "الغربية", "أسيوط", "سوهاج", "المنيا", "بني سويف", "الفيوم", "إسماعيلية", "السويس", "بورسعيد"]
@@ -263,43 +233,51 @@ def calculate_match_score(query: str, item_name: str, brand: str, model: str, ye
         score = min(score + 4.0, 99.8)
     return round(min(score, 99.8), 1)
 
-def process_search_results(df: pd.DataFrame, query: str = "") -> list:
-    if df.empty:
+def process_search_results(ads: list, query: str = "") -> list:
+    if not ads:
         return []
-    df = df.copy().reset_index(drop=True)
 
-    predicted_prices = [None] * len(df)
+    predicted_prices = [None] * len(ads)
 
     if HAS_CATBOOST and Pool is not None and cb_model_obj is not None:
         try:
-            eval_df = df.copy()
             current_year = 2026
-            
-            years = pd.to_numeric(eval_df['year'], errors='coerce').fillna(2024)
-            raw_mileages = pd.to_numeric(eval_df['mileage'], errors='coerce')
-            mileages = raw_mileages.fillna(122000.0)
-            
-            eval_df['car_age'] = (current_year - years).clip(lower=0)
-            eval_df['km_per_year'] = np.where(eval_df['car_age'] > 0, mileages / eval_df['car_age'].replace(0, 1), mileages)
-            
-            eval_df['fuel_type'] = eval_df.get('fuel_type', pd.Series(['Benzine']*len(df))).fillna('Benzine')
-            eval_df['car_condition'] = np.where(raw_mileages == 0, 'New', 'Used')
-            eval_df['condition_tag'] = eval_df.get('condition_tag', pd.Series(['Fabrika']*len(df))).fillna('Fabrika')
-            eval_df['trim_tier'] = eval_df.get('trim_tier', pd.Series(['Topline']*len(df))).fillna('Topline')
-            
             num_cols = ['year', 'mileage', 'car_age', 'km_per_year']
             cat_cols = ['brand', 'model', 'location', 'transmission', 'fuel_type', 'car_condition', 'condition_tag', 'trim_tier']
+            feature_cols = num_cols + cat_cols
             medians = {'year': 2016.0, 'mileage': 122000.0, 'car_age': 10.0, 'km_per_year': 11600.0}
 
-            for c in num_cols:
-                eval_df[c] = pd.to_numeric(eval_df[c], errors="coerce").fillna(medians.get(c, 0))
-                
-            # CRITICAL FIX: Title Case for categorical features matching CatBoost training set
-            for c in cat_cols:
-                eval_df[c] = eval_df[c].fillna("Missing").astype(str).str.title()
-                
-            feature_df = eval_df[num_cols + cat_cols]
-            pool = Pool(feature_df, cat_features=cat_cols)
+            data_matrix = []
+            for r in ads:
+                yr = int(r.get('year')) if r.get('year') else 2024
+                raw_km = r.get('mileage')
+                km = float(raw_km) if raw_km is not None else medians['mileage']
+                age = max(0, current_year - yr)
+                km_py = km / max(1, age) if age > 0 else km
+
+                c_cond = "New" if raw_km == 0 else "Used"
+                f_type = str(r.get('fuel_type', 'Benzine')).title()
+                c_tag = str(r.get('condition_tag', 'Fabrika')).title()
+                t_tier = str(r.get('trim_tier', 'Topline')).title()
+
+                row = [
+                    float(yr),
+                    float(km),
+                    float(age),
+                    float(km_py),
+                    str(r.get('brand', 'Kia')).title(),
+                    str(r.get('model', 'Sportage')).title(),
+                    str(r.get('location', 'Cairo')).title(),
+                    str(r.get('transmission', 'Automatic')).title(),
+                    f_type,
+                    c_cond,
+                    c_tag,
+                    t_tier
+                ]
+                data_matrix.append(row)
+
+            cat_indices = list(range(len(num_cols), len(feature_cols)))
+            pool = Pool(data=data_matrix, cat_features=cat_indices)
             preds_log = cb_model_obj.predict(pool)
             preds_egp = np.expm1(preds_log)
 
@@ -311,15 +289,15 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
                     predicted_prices.append(None)
         except Exception as e:
             print("CatBoost valuation error:", e)
-            predicted_prices = [None] * len(df)
+            predicted_prices = [None] * len(ads)
 
     out_records = []
-    for idx, r in df.iterrows():
+    for idx, r in enumerate(ads):
         url = r.get("item_url")
         valid_url = is_valid_vehicle_url(url)
         
         src_price = r.get("price")
-        price_val = float(src_price) if (src_price is not None and not pd.isna(src_price) and src_price > 0) else None
+        price_val = float(src_price) if (src_price is not None and src_price > 0) else None
         
         fair_price_val = predicted_prices[idx] if (idx < len(predicted_prices) and predicted_prices[idx] is not None) else None
 
@@ -332,10 +310,7 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
                 deal_label = "Overpriced ⚠️"
 
         src_mileage = r.get("mileage")
-        if src_mileage is not None and not pd.isna(src_mileage):
-            mileage_val = float(src_mileage)
-        else:
-            mileage_val = None
+        mileage_val = float(src_mileage) if src_mileage is not None else None
 
         m_score = calculate_match_score(
             query=query,
@@ -389,27 +364,6 @@ def classify_image():
         image = Image.open(io.BytesIO(img_bytes))
     except Exception:
         return jsonify({"success": False, "error": "Invalid or corrupted image file. Please upload a valid JPG/PNG image."}), 400
-
-    if HAS_TORCH and img_processor is not None and car_vision_model is not None:
-        try:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            inputs = img_processor(images=image.convert("RGB"), return_tensors="pt").to(device)
-            with torch.inference_mode():
-                logits = car_vision_model(**inputs).logits
-                probs = torch.nn.functional.softmax(logits, dim=-1)
-                top_prob, idx = torch.max(probs, dim=-1)
-                idx_item = idx.item()
-                prob_item = top_prob.item()
-
-            label = car_vision_model.config.id2label[idx_item].replace("_", " ").title()
-            if prob_item >= 0.10 and label:
-                return jsonify({
-                    "success": True,
-                    "label": label,
-                    "confidence": round(prob_item * 100, 1)
-                })
-        except Exception as e:
-            print("Local PyTorch classification exception:", e)
 
     try:
         headers = {"Accept": "application/json"}
@@ -517,12 +471,10 @@ def search():
             detected_brand = query
 
     ads = live_engine.scrape_hatla2ee(detected_brand, detected_model)
-    sub_df = pd.DataFrame(ads)
+    if ads:
+        ads = sorted(ads, key=lambda x: x.get("year", 0), reverse=True)[:10]
 
-    if not sub_df.empty:
-        sub_df = sub_df.sort_values("year", ascending=False).head(10)
-
-    formatted_results = process_search_results(sub_df, query=query)
+    formatted_results = process_search_results(ads, query=query)
     return jsonify({
         "query": query,
         "brand": detected_brand,
