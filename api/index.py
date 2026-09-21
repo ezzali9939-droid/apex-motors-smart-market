@@ -285,7 +285,7 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
         return []
     df = df.copy()
 
-    predicted_prices = [None] * len(df)
+    predicted_prices = []
 
     if HAS_CATBOOST and Pool is not None and cb_model_obj is not None:
         try:
@@ -324,7 +324,6 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
             preds_log = cb_model_obj.predict(pool)
             preds_egp = np.expm1(preds_log)
 
-            predicted_prices = []
             for p in preds_egp:
                 if not np.isnan(p) and p > 0:
                     predicted_prices.append(float(np.round(p, 0)))
@@ -332,9 +331,9 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
                     predicted_prices.append(None)
         except Exception as e:
             print("CatBoost valuation error:", e)
-            predicted_prices = [None] * len(df)
-    else:
-        # Matrix valuation for serverless environment
+            predicted_prices = []
+
+    if not predicted_prices or len(predicted_prices) != len(df):
         predicted_prices = []
         for idx, r in df.iterrows():
             b = str(r.get("brand", "Kia"))
