@@ -283,7 +283,7 @@ def calculate_match_score(query: str, item_name: str, brand: str, model: str, ye
 def process_search_results(df: pd.DataFrame, query: str = "") -> list:
     if df.empty:
         return []
-    df = df.copy()
+    df = df.copy().reset_index(drop=True)
 
     predicted_prices = []
 
