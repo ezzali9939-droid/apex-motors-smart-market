@@ -23,11 +23,12 @@ class ApexProductionValuationEngine:
 sys.modules['__main__'].ApexProductionValuationEngine = ApexProductionValuationEngine
 
 try:
-    from catboost import Pool
+    from catboost import Pool, CatBoostRegressor
     HAS_CATBOOST = True
 except ImportError:
     HAS_CATBOOST = False
     Pool = None
+    CatBoostRegressor = None
 
 try:
     import torch
@@ -46,9 +47,7 @@ if HAS_TORCH:
         img_processor = AutoImageProcessor.from_pretrained(VISION_MODEL_NAME)
         car_vision_model = AutoModelForImageClassification.from_pretrained(VISION_MODEL_NAME).to(device)
         car_vision_model.eval()
-        print("Successfully loaded local PyTorch Vision AI model!")
     except Exception as e:
-        print("PyTorch vision model load exception:", e)
         img_processor, car_vision_model = None, None
 
 app = Flask(__name__)
@@ -214,13 +213,27 @@ class DualPlatformMarketScraper:
 live_engine = DualPlatformMarketScraper()
 
 val_engine = None
-if os.path.exists("apex_catboost_valuation.joblib"):
-    try:
-        val_engine = joblib.load("apex_catboost_valuation.joblib")
-        print("Successfully loaded CatBoost valuation model engine!")
-    except Exception as e:
-        print("Failed loading CatBoost model:", e)
-        val_engine = None
+cb_model_obj = None
+
+# Attempt loading .cbm model or joblib engine
+if HAS_CATBOOST:
+    if os.path.exists("catboost_model.cbm"):
+        try:
+            cb_model_obj = CatBoostRegressor()
+            cb_model_obj.load_model("catboost_model.cbm")
+            print("Successfully loaded CatBoost model from catboost_model.cbm!")
+        except Exception as e:
+            print("Failed loading catboost_model.cbm:", e)
+            cb_model_obj = None
+
+    if cb_model_obj is None and os.path.exists("apex_catboost_valuation.joblib"):
+        try:
+            val_engine = joblib.load("apex_catboost_valuation.joblib")
+            cb_model_obj = getattr(val_engine, 'model', None)
+            print("Successfully loaded CatBoost model engine from joblib!")
+        except Exception as e:
+            print("Failed loading CatBoost joblib:", e)
+            val_engine = None
 
 def calculate_match_score(query: str, item_name: str, brand: str, model: str, year: int | None) -> float:
     if not query:
@@ -248,7 +261,7 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
 
     predicted_prices = [None] * len(df)
 
-    if val_engine is not None and HAS_CATBOOST and Pool is not None and getattr(val_engine, 'model', None) is not None:
+    if HAS_CATBOOST and Pool is not None and cb_model_obj is not None:
         try:
             eval_df = df.copy()
             current_year = 2026
@@ -264,9 +277,9 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
             eval_df['condition_tag'] = eval_df['condition_tag'].fillna('Fabrika') if 'condition_tag' in eval_df.columns else 'Fabrika'
             eval_df['trim_tier'] = eval_df['trim_tier'].fillna('Topline') if 'trim_tier' in eval_df.columns else 'Topline'
             
-            num_cols = getattr(val_engine, 'num_cols', ['year', 'mileage', 'car_age', 'km_per_year'])
-            cat_cols = getattr(val_engine, 'cat_cols', ['brand', 'model', 'location', 'transmission', 'fuel_type', 'car_condition', 'condition_tag', 'trim_tier'])
-            medians = getattr(val_engine, 'medians', {})
+            num_cols = ['year', 'mileage', 'car_age', 'km_per_year']
+            cat_cols = ['brand', 'model', 'location', 'transmission', 'fuel_type', 'car_condition', 'condition_tag', 'trim_tier']
+            medians = {'year': 2016.0, 'mileage': 122000.0, 'car_age': 10.0, 'km_per_year': 11600.0}
 
             for c in num_cols:
                 if c in eval_df.columns:
@@ -282,7 +295,7 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
                 
             feature_df = eval_df[num_cols + cat_cols]
             pool = Pool(feature_df, cat_features=cat_cols)
-            preds_log = val_engine.model.predict(pool)
+            preds_log = cb_model_obj.predict(pool)
             preds_egp = np.expm1(preds_log)
 
             predicted_prices = []
@@ -349,7 +362,7 @@ def health():
     return jsonify({
         "status": "ok",
         "service": "Apex Motors API",
-        "catboost_loaded": val_engine is not None and getattr(val_engine, 'model', None) is not None
+        "catboost_loaded": cb_model_obj is not None
     })
 
 @app.route("/api/classify", methods=["POST"])
@@ -369,7 +382,6 @@ def classify_image():
     except Exception:
         return jsonify({"success": False, "error": "Invalid or corrupted image file. Please upload a valid JPG/PNG image."}), 400
 
-    # 1. Local PyTorch Vision classification if available
     if HAS_TORCH and img_processor is not None and car_vision_model is not None:
         try:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -391,7 +403,6 @@ def classify_image():
         except Exception as e:
             print("Local PyTorch classification exception:", e)
 
-    # 2. HuggingFace router API fallback
     try:
         headers = {"Accept": "application/json"}
         api_url = "https://router.huggingface.co/hf-inference/v1/models/dima806/car_models_image_detection"
