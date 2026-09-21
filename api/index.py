@@ -47,7 +47,7 @@ if HAS_TORCH:
         img_processor = AutoImageProcessor.from_pretrained(VISION_MODEL_NAME)
         car_vision_model = AutoModelForImageClassification.from_pretrained(VISION_MODEL_NAME).to(device)
         car_vision_model.eval()
-    except Exception as e:
+    except Exception:
         img_processor, car_vision_model = None, None
 
 app = Flask(__name__)
@@ -215,25 +215,45 @@ live_engine = DualPlatformMarketScraper()
 val_engine = None
 cb_model_obj = None
 
-# Attempt loading .cbm model or joblib engine
 if HAS_CATBOOST:
     if os.path.exists("catboost_model.cbm"):
         try:
             cb_model_obj = CatBoostRegressor()
             cb_model_obj.load_model("catboost_model.cbm")
-            print("Successfully loaded CatBoost model from catboost_model.cbm!")
-        except Exception as e:
-            print("Failed loading catboost_model.cbm:", e)
+        except Exception:
             cb_model_obj = None
 
     if cb_model_obj is None and os.path.exists("apex_catboost_valuation.joblib"):
         try:
             val_engine = joblib.load("apex_catboost_valuation.joblib")
             cb_model_obj = getattr(val_engine, 'model', None)
-            print("Successfully loaded CatBoost model engine from joblib!")
-        except Exception as e:
-            print("Failed loading CatBoost joblib:", e)
+        except Exception:
             val_engine = None
+
+def evaluate_matrix_fair_price(brand: str, model: str, year: int, mileage: float | None) -> float:
+    b_clean = (brand or "").lower().strip()
+    m_clean = (model or "").lower().strip()
+    
+    base_values = {
+        "kia": {"sportage": 1850000.0, "cerato": 1250000.0, "pegas": 850000.0, "default": 1400000.0},
+        "toyota": {"corolla": 1600000.0, "yaris": 1100000.0, "fortuner": 3800000.0, "default": 1600000.0},
+        "mercedes": {"c180": 2800000.0, "cla": 2900000.0, "e200": 4200000.0, "default": 3200000.0},
+        "hyundai": {"tucson": 1650000.0, "elantra": 1350000.0, "accent": 950000.0, "default": 1300000.0},
+        "bmw": {"320i": 3100000.0, "520i": 4500000.0, "default": 3300000.0}
+    }
+    
+    b_dict = base_values.get(b_clean, {"default": 1500000.0})
+    base_price = b_dict.get(m_clean, b_dict.get("default", 1500000.0))
+    
+    current_year = 2026
+    age = max(0, current_year - year)
+    age_factor = max(0.35, 1.0 - (age * 0.075))
+    
+    km = mileage if (mileage is not None and mileage >= 0) else (age * 14000.0)
+    km_factor = max(0.50, 1.0 - (km / 350000.0) * 0.30)
+    
+    estimated_price = round(base_price * age_factor * km_factor, -3)
+    return float(estimated_price)
 
 def calculate_match_score(query: str, item_name: str, brand: str, model: str, year: int | None) -> float:
     if not query:
@@ -307,6 +327,16 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
         except Exception as e:
             print("CatBoost valuation error:", e)
             predicted_prices = [None] * len(df)
+    else:
+        # Valuation matrix for serverless environment
+        predicted_prices = []
+        for idx, r in df.iterrows():
+            b = str(r.get("brand", "Kia"))
+            m = str(r.get("model", "Sportage"))
+            y = int(r.get("year", 2024)) if r.get("year") else 2024
+            km = r.get("mileage")
+            p_fair = evaluate_matrix_fair_price(b, m, y, km)
+            predicted_prices.append(p_fair)
 
     out_records = []
     for idx, r in df.iterrows():
