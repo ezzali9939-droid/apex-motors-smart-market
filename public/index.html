@@ -422,7 +422,7 @@
         <div class="search-box-container">
             <form class="search-form" id="search-form" onsubmit="event.preventDefault(); performSearch();">
                 <input type="text" id="search-input" class="search-input" placeholder="Type your car requirements and press Enter..." autocomplete="off">
-                <button type="button" class="cam-btn" id="cam-btn" title="Upload car image for AI recognition" onclick="document.getElementById('image-input').click();">📷</button>
+                <button type="button" class="cam-btn" id="cam-btn" title="Upload car image for AI recognition" onclick="triggerImageSelect()">📷</button>
                 <input type="file" id="image-input" accept="image/*" style="display: none;">
             </form>
 
@@ -456,14 +456,19 @@
 
     <script>
         let activeImageFile = null;
+        let activeRequestId = 0;
+
+        function triggerImageSelect() {
+            document.getElementById('image-input').click();
+        }
 
         document.getElementById('image-input').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) {
-                // Canceling file selection does nothing, no request or state change
+                // Canceling file selection does nothing, no state change or request
                 return;
             }
-            if (!file.type.startsWith('image/')) {
+            if (!file.type || !file.type.startsWith('image/')) {
                 showError("Selected file is not an image. Please select a JPG or PNG file.");
                 return;
             }
@@ -513,6 +518,7 @@
 
         async function processUploadedImage(file) {
             hideError();
+            const currentReqId = ++activeRequestId;
             const spinner = document.getElementById("loading-spinner");
             const header = document.getElementById("results-header");
             const container = document.getElementById("results-container");
@@ -537,6 +543,8 @@
                 });
                 const data = await response.json();
 
+                if (currentReqId !== activeRequestId) return;
+
                 if (!response.ok || !data.success) {
                     showError(`⚠️ ${data.error || "Unable to identify vehicle in image."}`);
                     return;
@@ -547,10 +555,11 @@
                 badge.innerHTML = `📷 Detected Vehicle: <strong>${detectedLabel}</strong>${confidence}`;
                 badgeBox.style.display = "block";
 
-                // Automatically trigger market search for detected vehicle
+                // Pre-fill input and trigger search
                 document.getElementById("search-input").value = detectedLabel;
                 performSearch(detectedLabel);
             } catch (err) {
+                if (currentReqId !== activeRequestId) return;
                 showError("⚠️ Network error during image processing. Please check connection and try again.");
             }
         }
@@ -558,13 +567,23 @@
         async function performSearch(queryText = null) {
             hideError();
             const input = document.getElementById("search-input");
-            const query = queryText || input.value.trim() || "kia sportage";
-            if (!queryText) input.value = query;
+            const query = (queryText !== null ? queryText : input.value).trim();
 
             const spinner = document.getElementById("loading-spinner");
             const header = document.getElementById("results-header");
             const container = document.getElementById("results-container");
             const emptyState = document.getElementById("empty-state");
+
+            if (!query) {
+                spinner.style.display = "none";
+                header.style.display = "none";
+                container.innerHTML = "";
+                emptyState.style.display = "block";
+                emptyState.innerHTML = "Please enter a vehicle make or model to search (e.g. <em>Toyota Corolla</em>, <em>Kia Sportage</em>, <em>Mercedes C180</em>), or upload a car photo 📷";
+                return;
+            }
+
+            const currentReqId = ++activeRequestId;
 
             spinner.innerHTML = "⚡ Searching market & running CatBoost valuation...";
             spinner.style.display = "block";
@@ -576,12 +595,14 @@
                 const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
                 const data = await response.json();
 
+                if (currentReqId !== activeRequestId) return;
+
                 spinner.style.display = "none";
                 header.textContent = `🎯 Live Market Results for: "${data.query || query}"`;
                 header.style.display = "block";
 
                 if (!data.results || data.results.length === 0) {
-                    container.innerHTML = `<div class="empty-state">No matching vehicle listings found. Try another search query!</div>`;
+                    container.innerHTML = `<div class="empty-state">No matching vehicle listings found for "${query}". Try searching by make or model (e.g., Toyota Corolla, Kia Sportage, Mercedes C180).</div>`;
                     return;
                 }
 
@@ -612,7 +633,7 @@
                     }
 
                     // Format predicted fair price
-                    let fairPriceText = "N/A";
+                    let fairPriceText = "Valuation Unavailable";
                     if (r.predicted_fair_price && r.predicted_fair_price > 0) {
                         fairPriceText = `${Number(r.predicted_fair_price).toLocaleString()} EGP`;
                     }
@@ -621,7 +642,7 @@
                     if (r.has_valid_url && r.item_url) {
                         actionHtml = `<a href="${r.item_url}" target="_blank" rel="noopener noreferrer" class="view-btn">View Listing ↗</a>`;
                     } else {
-                        actionHtml = `<div class="unavailable-badge" title="Direct vehicle detail link is unavailable for this fallback record">⚠️ Listing URL Unavailable</div>`;
+                        actionHtml = `<div class="unavailable-badge" title="Direct vehicle detail link is unavailable for this market record">⚠️ Listing URL Unavailable</div>`;
                     }
 
                     const card = document.createElement("div");
@@ -654,6 +675,7 @@
                     container.appendChild(card);
                 });
             } catch (err) {
+                if (currentReqId !== activeRequestId) return;
                 spinner.style.display = "none";
                 container.innerHTML = `<div class="empty-state" style="color: #fca5a5;">⚠️ Failed to load search results. Please try again.</div>`;
             }

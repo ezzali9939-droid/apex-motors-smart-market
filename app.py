@@ -49,11 +49,18 @@ st.set_page_config(
 )
 
 @st.cache_data(show_spinner=False)
-def get_image_data(image_path="mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg", mime="image/jpeg"):
-    if os.path.exists(image_path):
-        with open(image_path, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode("utf-8")
-        return f"data:{mime};base64,{encoded}"
+def get_image_data(image_name="mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg", mime="image/jpeg"):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, image_name),
+        os.path.join(base_dir, "public", image_name),
+        image_name
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("utf-8")
+            return f"data:{mime};base64,{encoded}"
     return ""
 
 BG_IMAGE = get_image_data("mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg", "image/jpeg")
@@ -189,8 +196,6 @@ html, body, [data-testid="stAppViewContainer"] {{
 }}
 
 .feature-row {{
-    position: relative;
-    z-index: 3;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     max-width: 760px;
@@ -236,10 +241,12 @@ html, body, [data-testid="stAppViewContainer"] {{
     backdrop-filter: blur(14px);
     transition: all 0.2s ease;
 }}
+
 .car-card:hover {{
     border-color: rgba(56, 189, 248, 0.35);
     transform: translateY(-2px);
 }}
+
 .deal-badge-great {{
     background: rgba(34,197,94,.15);
     border: 1px solid rgba(34,197,94,.65);
@@ -337,6 +344,9 @@ class DualPlatformMarketScraper:
 
     def scrape_hatla2ee(self, brand: str, model: str = None) -> list:
         records = []
+        if not brand:
+            return []
+
         clean_b = brand.lower().strip()
         clean_m = model.lower().strip() if model else ""
         
@@ -350,128 +360,126 @@ class DualPlatformMarketScraper:
                 soup = BeautifulSoup(resp.content, "html.parser")
                 records_by_url = {}
 
-                for a in soup.find_all("a", href=True):
+                cards = soup.find_all(lambda tag: tag.name in ['div', 'article', 'section'] and tag.get('class') and 'bg-card' in tag.get('class'))
+                if not cards:
+                    cards = soup.find_all(lambda tag: tag.name in ['div', 'article', 'section'] and tag.get('class') and any('unit' in c.lower() or 'card' in c.lower() for c in tag.get('class')))
+
+                for card in cards:
                     try:
-                        href = a["href"].strip()
-                        if DETAIL_URL_PATTERN.search(href) and "teraz/" not in href.lower():
-                            full_link = urljoin(self.base_url, href)
-                            raw_title = a.text.strip()
-                            if any(k in raw_title.lower() for k in ["slide", "previous", "next", "عرض الكل"]):
-                                raw_title = ""
+                        detail_a = None
+                        for a in card.find_all("a", href=True):
+                            href = a["href"].strip()
+                            if DETAIL_URL_PATTERN.search(href) and "teraz/" not in href.lower():
+                                detail_a = a
+                                text = a.get_text(strip=True)
+                                if text and not any(k in text.lower() for k in ["slide", "previous", "next", "عرض الكل"]):
+                                    break
 
-                            if full_link in records_by_url:
-                                if not records_by_url[full_link]["name"] and raw_title:
-                                    records_by_url[full_link]["name"] = raw_title
-                                continue
+                        if not detail_a:
+                            continue
 
-                            card = a.find_parent(lambda tag: tag.name in ['div', 'article', 'section'] and tag.get('class') and any('unit' in c.lower() or 'card' in c.lower() or 'item' in c.lower() or 'product' in c.lower() for c in tag.get('class')))
+                        raw_href = detail_a["href"].strip()
+                        full_link = urljoin(self.base_url, raw_href)
 
-                            price = None
-                            year = None
-                            mileage = None
-                            location = "Cairo"
-                            transmission = "Automatic"
+                        if full_link in records_by_url:
+                            continue
 
-                            if card:
-                                card_text = normalize_digits(card.get_text(" | ", strip=True))
-                                p_match = re.search(r'([\d,]{4,12})\s*(?:جنيه|EGP|ج\.م|L\.E)', card_text)
-                                if p_match:
-                                    try:
-                                        p_val = float(p_match.group(1).replace(',', '').replace(' ', ''))
-                                        if p_val > 10000:
-                                            price = p_val
-                                    except ValueError:
-                                        price = None
+                        title_text = ""
+                        for a in card.find_all("a", href=True):
+                            t = a.get_text(strip=True)
+                            if t and not any(k in t.lower() for k in ["slide", "previous", "next", "عرض الكل"]):
+                                title_text = t
+                                break
 
-                                y_match = re.search(r'\b(19\d{2}|20\d{2})\b', card_text)
-                                if y_match:
-                                    year = int(y_match.group(1))
+                        card_text_space = normalize_digits(card.get_text(" ", strip=True))
+                        card_text_bar = normalize_digits(card.get_text(" | ", strip=True))
 
-                                km_match = re.search(r'([\d,]{1,8})\s*(?:کم|كم|km|كيلومتر|كيلو)', card_text, re.IGNORECASE)
-                                if km_match:
-                                    try:
-                                        km_str = km_match.group(1).replace(',', '').replace(' ', '').strip()
-                                        mileage = float(km_str)
-                                    except ValueError:
-                                        mileage = None
-                                else:
-                                    if " 0 " in card_text or "0كم" in card_text or "0کم" in card_text:
-                                        mileage = 0.0
+                        price = None
+                        p_match = re.search(r'([\d,]{4,12})\s*(?:جنيه|EGP|ج\.م|L\.E)', card_text_space)
+                        if p_match:
+                            try:
+                                p_val = float(p_match.group(1).replace(',', '').replace(' ', ''))
+                                if p_val > 10000:
+                                    price = p_val
+                            except ValueError:
+                                price = None
 
-                                if any(t in card_text for t in ["يدوي", "مانيوال", "Manual"]):
-                                    transmission = "Manual"
+                        year = None
+                        y_match = re.search(r'\b(19\d{2}|20\d{2})\b', card_text_space)
+                        if y_match:
+                            year = int(y_match.group(1))
 
-                                tokens = [t.strip() for t in card_text.split('|') if t.strip()]
-                                known_locs = ["القاهرة", "الجيزة", "الإسكندرية", "التجمع", "المهندسين", "دمياط", "منوفية", "الشرقية", "الدقهلية", "الغربية", "أسيوط", "سوهاج", "المنيا", "بني سويف", "الفيوم", "إسماعيلية", "السويس", "بورسعيد"]
-                                for tok in tokens:
-                                    if any(loc in tok for loc in known_locs):
-                                        location = tok
-                                        break
+                        mileage = None
+                        km_match = re.search(r'([\d,]{1,8})\s*(?:کم|كم|km|كيلومتر|كيلو)', card_text_space, re.IGNORECASE)
+                        if km_match:
+                            try:
+                                km_str = km_match.group(1).replace(',', '').replace(' ', '').strip()
+                                mileage = float(km_str)
+                            except ValueError:
+                                mileage = None
+                        elif re.search(r'\b0\s*(?:کم|كم|km)\b', card_text_space, re.IGNORECASE):
+                            mileage = 0.0
 
-                            records_by_url[full_link] = {
-                                "name": raw_title,
-                                "brand": brand.capitalize(),
-                                "model": model.capitalize() if model else "Model",
-                                "price": price,
-                                "year": year if year else 2024,
-                                "mileage": mileage,
-                                "location": location,
-                                "transmission": transmission,
-                                "condition_tag": "Fabrika",
-                                "trim_tier": "Topline",
-                                "source": "Hatla2ee",
-                                "item_url": full_link
-                            }
+                        transmission = "Automatic"
+                        if any(t in card_text_space for t in ["يدوي", "مانيوال", "Manual"]):
+                            transmission = "Manual"
+
+                        fuel_type = "Benzine"
+                        if "هجين" in card_text_space or "Hybrid" in card_text_space:
+                            fuel_type = "Hybrid"
+                        elif "كهرباء" in card_text_space or "Electric" in card_text_space:
+                            fuel_type = "Electric"
+                        elif "غاز" in card_text_space or "Gas" in card_text_space:
+                            fuel_type = "Gas"
+
+                        condition_tag = "Fabrika" if "فابريكا" in card_text_space else "Used"
+
+                        tokens = [t.strip() for t in card_text_bar.split('|') if t.strip()]
+                        location = "Cairo"
+                        known_locs = ["القاهرة", "الجيزة", "الإسكندرية", "التجمع", "المهندسين", "دمياط", "منوفية", "الشرقية", "الدقهلية", "الغربية", "أسيوط", "سوهاج", "المنيا", "بني سويف", "الفيوم", "إسماعيلية", "السويس", "بورسعيد"]
+                        for tok in tokens:
+                            if any(loc in tok for loc in known_locs):
+                                location = tok
+                                break
+
+                        rec_title = title_text if len(title_text) >= 3 else f"{brand.title()} {model.title() if model else ''} {year or ''}".strip()
+
+                        records_by_url[full_link] = {
+                            "name": rec_title,
+                            "brand": brand.title(),
+                            "model": model.title() if model else "Model",
+                            "price": price,
+                            "year": year if year else 2024,
+                            "mileage": mileage,
+                            "location": location,
+                            "transmission": transmission,
+                            "fuel_type": fuel_type,
+                            "car_condition": "New" if mileage == 0 else "Used",
+                            "condition_tag": condition_tag,
+                            "trim_tier": "Topline",
+                            "source": "Hatla2ee Market",
+                            "item_url": full_link
+                        }
                     except Exception:
                         pass
 
-                for full_link, rec in records_by_url.items():
-                    if not rec["name"] or len(rec["name"]) < 3:
-                        path_parts = urlparse(full_link).path.strip('/').split('/')
-                        filtered_parts = [p.replace('-', ' ').capitalize() for p in path_parts if p not in ['ar', 'car', 'new-car', 'used', 'unit', 'teraz'] and not p.isdigit()]
-                        rec["name"] = ' '.join(filtered_parts) if filtered_parts else f"{brand.capitalize()} {model.capitalize() if model else ''} {rec['year']}"
-                    records.append(rec)
+                records = list(records_by_url.values())
         except Exception as e:
             print("Scraping Exception:", e)
 
-        if not records:
-            b_cap = brand.capitalize()
-            m_cap = model.capitalize() if model else "Model"
-            years = [2025, 2024, 2023, 2022, 2021]
-            base_prices = {"kia": 1850000.0, "mercedes": 2900000.0, "hyundai": 1450000.0, "toyota": 1600000.0, "bmw": 3200000.0}
-            p_seed = base_prices.get(clean_b, 1700000.0)
-            locs = ["New Cairo, Cairo", "Sheikh Zayed, Giza", "Nasr City, Cairo", "Heliopolis, Cairo", "Maadi, Cairo"]
-
-            for i, yr in enumerate(years):
-                adj_price = round(p_seed * (1 - (2025 - yr) * 0.08) + random.uniform(-15000, 15000), -3)
-                mock_km = 0.0 if yr == 2025 else float((2025 - yr) * 15000 + random.randint(1000, 5000))
-                records.append({
-                    "name": f"{b_cap} {m_cap} {yr} - Highline",
-                    "brand": b_cap,
-                    "model": m_cap,
-                    "price": float(adj_price),
-                    "year": yr,
-                    "mileage": mock_km,
-                    "location": locs[i % len(locs)],
-                    "transmission": "Automatic",
-                    "condition_tag": "Fabrika",
-                    "trim_tier": "Topline",
-                    "source": "Hatla2ee Market",
-                    "item_url": f"https://eg.hatla2ee.com/ar/car/{clean_b}/{clean_m or 'model'}/{7200000 + i}"
-                })
         return records
 
 live_engine = DualPlatformMarketScraper()
 
 def calculate_match_score(query: str, item_name: str, brand: str, model: str, year: int | None) -> float:
     if not query:
-        return 95.0
+        return 0.0
     q_norm = normalize_digits(query.lower())
     q_tokens = set(re.findall(r'\w+', q_norm))
     target_text = normalize_digits(f"{item_name} {brand} {model} {year or ''}".lower())
     t_tokens = set(re.findall(r'\w+', target_text))
     if not q_tokens:
-        return 90.0
+        return 0.0
     overlap = len(q_tokens.intersection(t_tokens))
     score = (overlap / len(q_tokens)) * 100.0
     if brand.lower() in q_norm:
@@ -493,15 +501,16 @@ def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataF
             eval_df = results_df.copy()
             current_year = 2026
             
-            years = pd.to_numeric(eval_df.get('year'), errors='coerce').fillna(2024)
-            mileages = pd.to_numeric(eval_df.get('mileage'), errors='coerce').fillna(0)
+            years = pd.to_numeric(eval_df['year'], errors='coerce').fillna(2024)
+            raw_mileages = pd.to_numeric(eval_df['mileage'], errors='coerce')
+            mileages = raw_mileages.fillna(122000.0)
             
             eval_df['car_age'] = (current_year - years).clip(lower=0)
             eval_df['km_per_year'] = np.where(eval_df['car_age'] > 0, mileages / eval_df['car_age'].replace(0, 1), mileages)
-            eval_df['fuel_type'] = eval_df.get('fuel_type', 'Benzine').fillna('Benzine')
-            eval_df['car_condition'] = np.where(mileages == 0, 'New', 'Used')
-            eval_df['condition_tag'] = eval_df.get('condition_tag', 'Fabrika').fillna('Fabrika')
-            eval_df['trim_tier'] = eval_df.get('trim_tier', 'Topline').fillna('Topline')
+            eval_df['fuel_type'] = eval_df.get('fuel_type', pd.Series(['Benzine']*len(results_df))).fillna('Benzine')
+            eval_df['car_condition'] = np.where(raw_mileages == 0, 'New', 'Used')
+            eval_df['condition_tag'] = eval_df.get('condition_tag', pd.Series(['Fabrika']*len(results_df))).fillna('Fabrika')
+            eval_df['trim_tier'] = eval_df.get('trim_tier', pd.Series(['Topline']*len(results_df))).fillna('Topline')
             
             num_cols = getattr(full_pricing_pipeline, 'num_cols', ['year', 'mileage', 'car_age', 'km_per_year'])
             cat_cols = getattr(full_pricing_pipeline, 'cat_cols', ['brand', 'model', 'location', 'transmission', 'fuel_type', 'car_condition', 'condition_tag', 'trim_tier'])
@@ -510,8 +519,9 @@ def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataF
             for c in num_cols:
                 eval_df[c] = pd.to_numeric(eval_df.get(c, 0), errors="coerce").fillna(medians.get(c, 0))
                 
+            # Title Case categorical features for CatBoost
             for c in cat_cols:
-                eval_df[c] = eval_df.get(c, "Missing").fillna("Missing").astype(str).str.lower()
+                eval_df[c] = eval_df.get(c, "Missing").fillna("Missing").astype(str).str.title()
                 
             feature_df = eval_df[num_cols + cat_cols]
             pool = Pool(feature_df, cat_features=cat_cols)
@@ -561,17 +571,43 @@ def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataF
 
 def hybrid_search(user_query: str = "", top_k: int = 6):
     q = user_query.lower().strip()
-    
-    detected_brand = "kia"
-    detected_model = "sportage"
+    if not q:
+        return pd.DataFrame()
+        
+    detected_brand = None
+    detected_model = None
     
     brands_dict = {
-        "kia": "kia", "مرسيدس": "mercedes", "mercedes": "mercedes", "hyundai": "hyundai", 
-        "هيونداي": "hyundai", "toyota": "toyota", "تويوتا": "toyota", "bmw": "bmw", "بي إم": "bmw"
+        "kia": "kia", "كيا": "kia",
+        "mercedes": "mercedes", "مرسيدس": "mercedes", "مرسيدس-بنز": "mercedes",
+        "hyundai": "hyundai", "هيونداي": "hyundai",
+        "toyota": "toyota", "تويوتا": "toyota",
+        "bmw": "bmw", "بي ام": "bmw", "بي إم": "bmw", "بي ام دبليو": "bmw",
+        "nissan": "nissan", "نيسان": "nissan",
+        "audi": "audi", "أودي": "audi",
+        "mitsubishi": "mitsubishi", "ميتسوبيشي": "mitsubishi",
+        "chevrolet": "chevrolet", "شيفروليه": "chevrolet", "شفروليه": "chevrolet",
+        "renault": "renault", "رينو": "renault",
+        "peugeot": "peugeot", "بيجو": "peugeot",
+        "mg": "mg", "ام جي": "mg", "إم جي": "mg",
+        "chery": "chery", "شيري": "chery",
+        "skoda": "skoda", "سكودا": "skoda",
+        "volkswagen": "volkswagen", "فولكس": "volkswagen", "فولكس فاجن": "volkswagen", "vw": "volkswagen",
+        "fiat": "fiat", "فيات": "fiat"
     }
+
     models_dict = {
-        "sportage": "sportage", "سبورتاج": "sportage", "cla": "cla", "توسان": "tucson", 
-        "tucson": "tucson", "corolla": "corolla", "كورولا": "corolla", "c180": "c180", "sunny": "sunny", "صني": "sunny"
+        "sportage": "sportage", "سبورتاج": "sportage",
+        "corolla": "corolla", "كورولا": "corolla",
+        "tucson": "tucson", "توسان": "tucson",
+        "c180": "c180", "c-class": "c180", "c 180": "c180", "cla": "cla", "e200": "e200",
+        "sunny": "sunny", "صني": "sunny",
+        "cerato": "cerato", "سيراتو": "cerato",
+        "elantra": "elantra", "النترا": "elantra", "إلنترا": "elantra",
+        "accent": "accent", "اكسنت": "accent",
+        "pegas": "pegas", "بيجاس": "pegas",
+        "yaris": "yaris", "ياريس": "yaris",
+        "fortuner": "fortuner", "فورتشنر": "fortuner"
     }
 
     for k, v in brands_dict.items():
@@ -583,6 +619,10 @@ def hybrid_search(user_query: str = "", top_k: int = 6):
         if k in q:
             detected_model = v
             break
+
+    if not detected_brand:
+        words = [w for w in re.findall(r'\w+', q) if not w.isdigit()]
+        detected_brand = words[0] if words else user_query
 
     ads = live_engine.scrape_hatla2ee(detected_brand, detected_model)
     sub_df = pd.DataFrame(ads)
@@ -639,70 +679,73 @@ if submitted or user_query or uploaded_file:
 
     st.markdown(f'<div style="color:#fff; font-size:1.15rem; font-weight:700; margin:35px 0 15px; max-width:760px; margin-left:auto; margin-right:auto;">🎯 Live Market Results for: "{final_q}"</div>', unsafe_allow_html=True)
 
-    for _, r in df_res.iterrows():
-        deal = str(r.get('deal_label', 'Fair Market Price'))
-        if "Great Deal" in deal:
-            badge_html = '<span class="deal-badge-great">🟢 Great Deal</span>'
-        elif "Overpriced" in deal:
-            badge_html = '<span class="deal-badge-overpriced">🔴 Overpriced</span>'
-        else:
-            badge_html = '<span class="deal-badge-fair">🟡 Fair Price</span>'
+    if df_res.empty:
+        st.info("No matching vehicle listings found for your search.")
+    else:
+        for _, r in df_res.iterrows():
+            deal = str(r.get('deal_label', 'Fair Market Price'))
+            if "Great Deal" in deal:
+                badge_html = '<span class="deal-badge-great">🟢 Great Deal</span>'
+            elif "Overpriced" in deal:
+                badge_html = '<span class="deal-badge-overpriced">🔴 Overpriced</span>'
+            else:
+                badge_html = '<span class="deal-badge-fair">🟡 Fair Price</span>'
 
-        raw_url = r.get('item_url', None)
-        if is_valid_vehicle_url(raw_url):
-            action_btn = f'''
-            <a href="{raw_url}" target="_blank" style="display: inline-block; background: rgba(56, 189, 248, 0.15); border: 1px solid var(--neon-blue); color: #fff; padding: 7px 16px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.9rem;">
-                View Listing ↗
-            </a>
-            '''
-        else:
-            action_btn = '''
-            <div style="display: inline-block; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 0.85rem;" title="Direct vehicle detail URL is unavailable for this market record">
-                ⚠️ Listing URL Unavailable
-            </div>
-            '''
-
-        km_val = r.get('mileage')
-        if km_val == 0:
-            km_text = "0 km"
-        elif km_val and km_val > 0:
-            km_text = f"{km_val:,.0f} km"
-        else:
-            km_text = "Not provided"
-
-        price_val = r.get('price')
-        price_text = f"{price_val:,.0f} EGP" if (price_val and price_val > 0) else "Price on request"
-
-        fair_val = r.get('predicted_fair_price')
-        fair_text = f"{fair_val:,.0f} EGP" if (fair_val and fair_val > 0) else "N/A"
-
-        st.markdown(f"""
-        <div class="car-card" style="max-width:760px; margin-left:auto; margin-right:auto;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 1.3rem; font-weight: 700; color: #fff;">{r['name']}</span>
-                <div>{badge_html}</div>
-            </div>
-            <div style="display: flex; gap: 15px; margin-top: 8px; color: #94a3b8; font-size: 0.88rem;">
-                <span>⚙️ {r['transmission']}</span>
-                <span>🛣️ {km_text}</span>
-                <span>📍 {r['location']}</span>
-                <span>⚡ Match: {r['match_score']}%</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
-                <div>
-                    <span style="color: #94a3b8; font-size: 0.82rem;">Listed Price:</span><br>
-                    <strong style="color: #fff; font-size: 1.2rem;">{price_text}</strong>
+            raw_url = r.get('item_url', None)
+            if is_valid_vehicle_url(raw_url):
+                action_btn = f'''
+                <a href="{raw_url}" target="_blank" style="display: inline-block; background: rgba(56, 189, 248, 0.15); border: 1px solid var(--neon-blue); color: #fff; padding: 7px 16px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.9rem;">
+                    View Listing ↗
+                </a>
+                '''
+            else:
+                action_btn = '''
+                <div style="display: inline-block; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 0.85rem;" title="Direct vehicle detail URL is unavailable for this market record">
+                    ⚠️ Listing URL Unavailable
                 </div>
-                <div>
-                    <span style="color: #94a3b8; font-size: 0.82rem;">Fair Price (CatBoost):</span><br>
-                    <strong style="color: var(--neon-blue); font-size: 1.2rem;">{fair_text}</strong>
+                '''
+
+            km_val = r.get('mileage')
+            if km_val == 0:
+                km_text = "0 km"
+            elif km_val and km_val > 0:
+                km_text = f"{km_val:,.0f} km"
+            else:
+                km_text = "Not provided"
+
+            price_val = r.get('price')
+            price_text = f"{price_val:,.0f} EGP" if (price_val and price_val > 0) else "Price on request"
+
+            fair_val = r.get('predicted_fair_price')
+            fair_text = f"{fair_val:,.0f} EGP" if (fair_val and fair_val > 0) else "N/A"
+
+            st.markdown(f"""
+            <div class="car-card" style="max-width:760px; margin-left:auto; margin-right:auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 1.3rem; font-weight: 700; color: #fff;">{r['name']}</span>
+                    <div>{badge_html}</div>
                 </div>
-                <div>
-                    {action_btn}
+                <div style="display: flex; gap: 15px; margin-top: 8px; color: #94a3b8; font-size: 0.88rem;">
+                    <span>⚙️ {r['transmission']}</span>
+                    <span>🛣️ {km_text}</span>
+                    <span>📍 {r['location']}</span>
+                    <span>⚡ Match: {r['match_score']}%</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <span style="color: #94a3b8; font-size: 0.82rem;">Listed Price:</span><br>
+                        <strong style="color: #fff; font-size: 1.2rem;">{price_text}</strong>
+                    </div>
+                    <div>
+                        <span style="color: #94a3b8; font-size: 0.82rem;">Fair Price (CatBoost):</span><br>
+                        <strong style="color: var(--neon-blue); font-size: 1.2rem;">{fair_text}</strong>
+                    </div>
+                    <div>
+                        {action_btn}
+                    </div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 else:
     st.markdown("""
     <div style="text-align: center; color: #8b929a; margin-top: 50px;">

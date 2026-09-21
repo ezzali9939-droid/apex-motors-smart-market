@@ -2,7 +2,6 @@ import os
 import re
 import io
 import sys
-import random
 from urllib.parse import urljoin, urlparse
 from flask import Flask, request, jsonify
 import requests
@@ -90,6 +89,9 @@ class DualPlatformMarketScraper:
 
     def scrape_hatla2ee(self, brand: str, model: str = None) -> list:
         records = []
+        if not brand:
+            return []
+
         clean_b = brand.lower().strip()
         clean_m = model.lower().strip() if model else ""
         
@@ -103,117 +105,123 @@ class DualPlatformMarketScraper:
                 soup = BeautifulSoup(resp.content, "html.parser")
                 records_by_url = {}
 
-                for a in soup.find_all("a", href=True):
+                # Look for top-level listing cards
+                cards = soup.find_all(lambda tag: tag.name in ['div', 'article', 'section'] and tag.get('class') and 'bg-card' in tag.get('class'))
+                if not cards:
+                    cards = soup.find_all(lambda tag: tag.name in ['div', 'article', 'section'] and tag.get('class') and any('unit' in c.lower() or 'card' in c.lower() for c in tag.get('class')))
+
+                for card in cards:
                     try:
-                        href = a["href"].strip()
-                        if DETAIL_URL_PATTERN.search(href) and "teraz/" not in href.lower():
-                            full_link = urljoin(self.base_url, href)
-                            raw_title = a.text.strip()
-                            if any(k in raw_title.lower() for k in ["slide", "previous", "next", "عرض الكل"]):
-                                raw_title = ""
+                        # Find valid detail link
+                        detail_a = None
+                        for a in card.find_all("a", href=True):
+                            href = a["href"].strip()
+                            if DETAIL_URL_PATTERN.search(href) and "teraz/" not in href.lower():
+                                detail_a = a
+                                text = a.get_text(strip=True)
+                                if text and not any(k in text.lower() for k in ["slide", "previous", "next", "عرض الكل"]):
+                                    break
 
-                            if full_link in records_by_url:
-                                if not records_by_url[full_link]["name"] and raw_title:
-                                    records_by_url[full_link]["name"] = raw_title
-                                continue
+                        if not detail_a:
+                            continue
 
-                            card = a.find_parent(lambda tag: tag.name in ['div', 'article', 'section'] and tag.get('class') and ('bg-card' in tag.get('class') or any('unit' in c.lower() or 'card' in c.lower() for c in tag.get('class'))))
+                        raw_href = detail_a["href"].strip()
+                        full_link = urljoin(self.base_url, raw_href)
 
-                            price = None
-                            year = None
-                            mileage = None
-                            location = "Cairo"
-                            transmission = "Automatic"
+                        if full_link in records_by_url:
+                            continue
 
-                            if card:
-                                card_text_space = normalize_digits(card.get_text(" ", strip=True))
-                                card_text_bar = normalize_digits(card.get_text(" | ", strip=True))
-                                
-                                p_match = re.search(r'([\d,]{4,12})\s*(?:جنيه|EGP|ج\.م|L\.E)', card_text_space)
-                                if p_match:
-                                    try:
-                                        p_val = float(p_match.group(1).replace(',', '').replace(' ', ''))
-                                        if p_val > 10000:
-                                            price = p_val
-                                    except ValueError:
-                                        price = None
+                        # Extract Title
+                        title_text = ""
+                        for a in card.find_all("a", href=True):
+                            t = a.get_text(strip=True)
+                            if t and not any(k in t.lower() for k in ["slide", "previous", "next", "عرض الكل"]):
+                                title_text = t
+                                break
 
-                                y_match = re.search(r'\b(19\d{2}|20\d{2})\b', card_text_space)
-                                if y_match:
-                                    year = int(y_match.group(1))
+                        card_text_space = normalize_digits(card.get_text(" ", strip=True))
+                        card_text_bar = normalize_digits(card.get_text(" | ", strip=True))
 
-                                km_match = re.search(r'([\d,]{1,8})\s*(?:کم|كم|km|كيلومتر|كيلو)', card_text_space, re.IGNORECASE)
-                                if km_match:
-                                    try:
-                                        km_str = km_match.group(1).replace(',', '').replace(' ', '').strip()
-                                        mileage = float(km_str)
-                                    except ValueError:
-                                        mileage = None
-                                else:
-                                    if " 0 كم " in card_text_space or " 0 كم" in card_text_space or " 0 کم" in card_text_space or " 0km" in card_text_space.lower():
-                                        mileage = 0.0
+                        # Listed Price
+                        price = None
+                        p_match = re.search(r'([\d,]{4,12})\s*(?:جنيه|EGP|ج\.م|L\.E)', card_text_space)
+                        if p_match:
+                            try:
+                                p_val = float(p_match.group(1).replace(',', '').replace(' ', ''))
+                                if p_val > 10000:
+                                    price = p_val
+                            except ValueError:
+                                price = None
 
-                                if any(t in card_text_space for t in ["يدوي", "مانيوال", "Manual"]):
-                                    transmission = "Manual"
+                        # Year
+                        year = None
+                        y_match = re.search(r'\b(19\d{2}|20\d{2})\b', card_text_space)
+                        if y_match:
+                            year = int(y_match.group(1))
 
-                                tokens = [t.strip() for t in card_text_bar.split('|') if t.strip()]
-                                known_locs = ["القاهرة", "الجيزة", "الإسكندرية", "التجمع", "المهندسين", "دمياط", "منوفية", "الشرقية", "الدقهلية", "الغربية", "أسيوط", "سوهاج", "المنيا", "بني سويف", "الفيوم", "إسماعيلية", "السويس", "بورسعيد"]
-                                for tok in tokens:
-                                    if any(loc in tok for loc in known_locs):
-                                        location = tok
-                                        break
+                        # Mileage
+                        mileage = None
+                        km_match = re.search(r'([\d,]{1,8})\s*(?:کم|كم|km|كيلومتر|كيلو)', card_text_space, re.IGNORECASE)
+                        if km_match:
+                            try:
+                                km_str = km_match.group(1).replace(',', '').replace(' ', '').strip()
+                                mileage = float(km_str)
+                            except ValueError:
+                                mileage = None
+                        elif re.search(r'\b0\s*(?:کم|كم|km)\b', card_text_space, re.IGNORECASE):
+                            mileage = 0.0
 
-                            records_by_url[full_link] = {
-                                "name": raw_title,
-                                "brand": brand.capitalize(),
-                                "model": model.capitalize() if model else "Model",
-                                "price": price,
-                                "year": year if year else 2024,
-                                "mileage": mileage,
-                                "location": location,
-                                "transmission": transmission,
-                                "condition_tag": "Fabrika",
-                                "trim_tier": "Topline",
-                                "source": "Hatla2ee",
-                                "item_url": full_link
-                            }
+                        # Transmission
+                        transmission = "Automatic"
+                        if any(t in card_text_space for t in ["يدوي", "مانيوال", "Manual"]):
+                            transmission = "Manual"
+
+                        # Fuel Type
+                        fuel_type = "Benzine"
+                        if "هجين" in card_text_space or "Hybrid" in card_text_space:
+                            fuel_type = "Hybrid"
+                        elif "كهرباء" in card_text_space or "Electric" in card_text_space:
+                            fuel_type = "Electric"
+                        elif "غاز" in card_text_space or "Gas" in card_text_space:
+                            fuel_type = "Gas"
+
+                        # Condition Tag
+                        condition_tag = "Fabrika" if "فابريكا" in card_text_space else "Used"
+
+                        # Location
+                        tokens = [t.strip() for t in card_text_bar.split('|') if t.strip()]
+                        location = "Cairo"
+                        known_locs = ["القاهرة", "الجيزة", "الإسكندرية", "التجمع", "المهندسين", "دمياط", "منوفية", "الشرقية", "الدقهلية", "الغربية", "أسيوط", "سوهاج", "المنيا", "بني سويف", "الفيوم", "إسماعيلية", "السويس", "بورسعيد"]
+                        for tok in tokens:
+                            if any(loc in tok for loc in known_locs):
+                                location = tok
+                                break
+
+                        rec_title = title_text if len(title_text) >= 3 else f"{brand.title()} {model.title() if model else ''} {year or ''}".strip()
+
+                        records_by_url[full_link] = {
+                            "name": rec_title,
+                            "brand": brand.title(),
+                            "model": model.title() if model else "Model",
+                            "price": price,
+                            "year": year if year else 2024,
+                            "mileage": mileage,
+                            "location": location,
+                            "transmission": transmission,
+                            "fuel_type": fuel_type,
+                            "car_condition": "New" if mileage == 0 else "Used",
+                            "condition_tag": condition_tag,
+                            "trim_tier": "Topline",
+                            "source": "Hatla2ee Market",
+                            "item_url": full_link
+                        }
                     except Exception:
                         pass
 
-                for full_link, rec in records_by_url.items():
-                    if not rec["name"] or len(rec["name"]) < 3:
-                        path_parts = urlparse(full_link).path.strip('/').split('/')
-                        filtered_parts = [p.replace('-', ' ').capitalize() for p in path_parts if p not in ['ar', 'car', 'new-car', 'used', 'unit', 'teraz'] and not p.isdigit()]
-                        rec["name"] = ' '.join(filtered_parts) if filtered_parts else f"{brand.capitalize()} {model.capitalize() if model else ''} {rec['year']}"
-                    records.append(rec)
+                records = list(records_by_url.values())
         except Exception as e:
             print("Scraping Exception:", e)
 
-        if not records:
-            b_cap = brand.capitalize()
-            m_cap = model.capitalize() if model else "Model"
-            years = [2025, 2024, 2023, 2022, 2021]
-            base_prices = {"kia": 1850000.0, "mercedes": 2900000.0, "hyundai": 1450000.0, "toyota": 1600000.0, "bmw": 3200000.0}
-            p_seed = base_prices.get(clean_b, 1700000.0)
-            locs = ["New Cairo, Cairo", "Sheikh Zayed, Giza", "Nasr City, Cairo", "Heliopolis, Cairo", "Maadi, Cairo"]
-            
-            for i, yr in enumerate(years):
-                adj_price = round(p_seed * (1 - (2025 - yr) * 0.08) + random.uniform(-15000, 15000), -3)
-                mock_km = 0.0 if yr == 2025 else float((2025 - yr) * 15000 + random.randint(1000, 5000))
-                records.append({
-                    "name": f"{b_cap} {m_cap} {yr} - Highline",
-                    "brand": b_cap,
-                    "model": m_cap,
-                    "price": float(adj_price),
-                    "year": yr,
-                    "mileage": mock_km,
-                    "location": locs[i % len(locs)],
-                    "transmission": "Automatic",
-                    "condition_tag": "Fabrika",
-                    "trim_tier": "Topline",
-                    "source": "Hatla2ee Market",
-                    "item_url": f"https://eg.hatla2ee.com/ar/car/{clean_b}/{clean_m or 'model'}/{7200000 + i}"
-                })
         return records
 
 live_engine = DualPlatformMarketScraper()
@@ -236,40 +244,15 @@ if HAS_CATBOOST:
         except Exception:
             val_engine = None
 
-def evaluate_matrix_fair_price(brand: str, model: str, year: int, mileage: float | None) -> float:
-    b_clean = (brand or "").lower().strip()
-    m_clean = (model or "").lower().strip()
-    
-    base_values = {
-        "kia": {"sportage": 1850000.0, "cerato": 1250000.0, "pegas": 850000.0, "default": 1400000.0},
-        "toyota": {"corolla": 1600000.0, "yaris": 1100000.0, "fortuner": 3800000.0, "default": 1600000.0},
-        "mercedes": {"c180": 2800000.0, "cla": 2900000.0, "e200": 4200000.0, "default": 3200000.0},
-        "hyundai": {"tucson": 1650000.0, "elantra": 1350000.0, "accent": 950000.0, "default": 1300000.0},
-        "bmw": {"320i": 3100000.0, "520i": 4500000.0, "default": 3300000.0}
-    }
-    
-    b_dict = base_values.get(b_clean, {"default": 1500000.0})
-    base_price = b_dict.get(m_clean, b_dict.get("default", 1500000.0))
-    
-    current_year = 2026
-    age = max(0, current_year - year)
-    age_factor = max(0.35, 1.0 - (age * 0.075))
-    
-    km = mileage if (mileage is not None and mileage >= 0) else (age * 14000.0)
-    km_factor = max(0.50, 1.0 - (km / 350000.0) * 0.30)
-    
-    estimated_price = round(base_price * age_factor * km_factor, -3)
-    return float(estimated_price)
-
 def calculate_match_score(query: str, item_name: str, brand: str, model: str, year: int | None) -> float:
     if not query:
-        return 95.0
+        return 0.0
     q_norm = normalize_digits(query.lower())
     q_tokens = set(re.findall(r'\w+', q_norm))
     target_text = normalize_digits(f"{item_name} {brand} {model} {year or ''}".lower())
     t_tokens = set(re.findall(r'\w+', target_text))
     if not q_tokens:
-        return 90.0
+        return 0.0
     overlap = len(q_tokens.intersection(t_tokens))
     score = (overlap / len(q_tokens)) * 100.0
     if brand.lower() in q_norm:
@@ -285,45 +268,42 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
         return []
     df = df.copy().reset_index(drop=True)
 
-    predicted_prices = []
+    predicted_prices = [None] * len(df)
 
     if HAS_CATBOOST and Pool is not None and cb_model_obj is not None:
         try:
             eval_df = df.copy()
             current_year = 2026
             
-            years = pd.to_numeric(eval_df.get('year'), errors='coerce').fillna(2024)
-            mileages = pd.to_numeric(eval_df.get('mileage'), errors='coerce').fillna(0)
+            years = pd.to_numeric(eval_df['year'], errors='coerce').fillna(2024)
+            raw_mileages = pd.to_numeric(eval_df['mileage'], errors='coerce')
+            mileages = raw_mileages.fillna(122000.0)
             
             eval_df['car_age'] = (current_year - years).clip(lower=0)
             eval_df['km_per_year'] = np.where(eval_df['car_age'] > 0, mileages / eval_df['car_age'].replace(0, 1), mileages)
             
-            eval_df['fuel_type'] = eval_df['fuel_type'].fillna('Benzine') if 'fuel_type' in eval_df.columns else 'Benzine'
-            eval_df['car_condition'] = np.where(mileages == 0, 'New', 'Used')
-            eval_df['condition_tag'] = eval_df['condition_tag'].fillna('Fabrika') if 'condition_tag' in eval_df.columns else 'Fabrika'
-            eval_df['trim_tier'] = eval_df['trim_tier'].fillna('Topline') if 'trim_tier' in eval_df.columns else 'Topline'
+            eval_df['fuel_type'] = eval_df.get('fuel_type', pd.Series(['Benzine']*len(df))).fillna('Benzine')
+            eval_df['car_condition'] = np.where(raw_mileages == 0, 'New', 'Used')
+            eval_df['condition_tag'] = eval_df.get('condition_tag', pd.Series(['Fabrika']*len(df))).fillna('Fabrika')
+            eval_df['trim_tier'] = eval_df.get('trim_tier', pd.Series(['Topline']*len(df))).fillna('Topline')
             
             num_cols = ['year', 'mileage', 'car_age', 'km_per_year']
             cat_cols = ['brand', 'model', 'location', 'transmission', 'fuel_type', 'car_condition', 'condition_tag', 'trim_tier']
             medians = {'year': 2016.0, 'mileage': 122000.0, 'car_age': 10.0, 'km_per_year': 11600.0}
 
             for c in num_cols:
-                if c in eval_df.columns:
-                    eval_df[c] = pd.to_numeric(eval_df[c], errors="coerce").fillna(medians.get(c, 0))
-                else:
-                    eval_df[c] = medians.get(c, 0)
+                eval_df[c] = pd.to_numeric(eval_df[c], errors="coerce").fillna(medians.get(c, 0))
                 
+            # CRITICAL FIX: Title Case for categorical features matching CatBoost training set
             for c in cat_cols:
-                if c in eval_df.columns:
-                    eval_df[c] = eval_df[c].fillna("Missing").astype(str).str.lower()
-                else:
-                    eval_df[c] = "missing"
+                eval_df[c] = eval_df[c].fillna("Missing").astype(str).str.title()
                 
             feature_df = eval_df[num_cols + cat_cols]
             pool = Pool(feature_df, cat_features=cat_cols)
             preds_log = cb_model_obj.predict(pool)
             preds_egp = np.expm1(preds_log)
 
+            predicted_prices = []
             for p in preds_egp:
                 if not np.isnan(p) and p > 0:
                     predicted_prices.append(float(np.round(p, 0)))
@@ -331,21 +311,7 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
                     predicted_prices.append(None)
         except Exception as e:
             print("CatBoost valuation error:", e)
-            predicted_prices = []
-
-    # Ensure every record receives a valid fair price prediction
-    if not predicted_prices or len(predicted_prices) != len(df) or any(p is None for p in predicted_prices):
-        new_preds = []
-        for i, (_, r) in enumerate(df.iterrows()):
-            if i < len(predicted_prices) and predicted_prices[i] is not None:
-                new_preds.append(predicted_prices[i])
-            else:
-                b = str(r.get("brand", "Kia"))
-                m = str(r.get("model", "Sportage"))
-                y = int(r.get("year", 2024)) if r.get("year") else 2024
-                km = r.get("mileage")
-                new_preds.append(evaluate_matrix_fair_price(b, m, y, km))
-        predicted_prices = new_preds
+            predicted_prices = [None] * len(df)
 
     out_records = []
     for idx, r in df.iterrows():
@@ -447,6 +413,10 @@ def classify_image():
 
     try:
         headers = {"Accept": "application/json"}
+        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+        if hf_token:
+            headers["Authorization"] = f"Bearer {hf_token}"
+
         api_url = "https://router.huggingface.co/hf-inference/v1/models/dima806/car_models_image_detection"
         hf_resp = requests.post(api_url, data=img_bytes, headers=headers, timeout=8)
         if hf_resp.status_code == 200:
@@ -471,43 +441,92 @@ def classify_image():
 @app.route("/api/search", methods=["GET"])
 def search():
     query = request.args.get("q", "").strip()
+    if not query:
+        return jsonify({
+            "query": "",
+            "brand": "",
+            "model": "",
+            "results": []
+        })
+
     q_lower = query.lower()
 
-    detected_brand = "kia"
-    detected_model = "sportage"
+    detected_brand = None
+    detected_model = None
 
     brands_dict = {
-        "kia": "kia", "مرسيدس": "mercedes", "mercedes": "mercedes", "hyundai": "hyundai", 
-        "هيونداي": "hyundai", "toyota": "toyota", "تويوتا": "toyota", "bmw": "bmw", "بي إم": "bmw",
-        "nissan": "nissan", "نيسان": "nissan", "audi": "audi", "أودي": "audi"
+        "kia": "kia", "كيا": "kia",
+        "mercedes": "mercedes", "مرسيدس": "mercedes", "مرسيدس-بنز": "mercedes",
+        "hyundai": "hyundai", "هيونداي": "hyundai",
+        "toyota": "toyota", "تويوتا": "toyota",
+        "bmw": "bmw", "بي ام": "bmw", "بي إم": "bmw", "بي ام دبليو": "bmw",
+        "nissan": "nissan", "نيسان": "nissan",
+        "audi": "audi", "أودي": "audi",
+        "mitsubishi": "mitsubishi", "ميتسوبيشي": "mitsubishi",
+        "chevrolet": "chevrolet", "شيفروليه": "chevrolet", "شفروليه": "chevrolet",
+        "renault": "renault", "رينو": "renault",
+        "peugeot": "peugeot", "بيجو": "peugeot",
+        "mg": "mg", "ام جي": "mg", "إم جي": "mg",
+        "chery": "chery", "شيري": "chery",
+        "skoda": "skoda", "سكودا": "skoda",
+        "volkswagen": "volkswagen", "فولكس": "volkswagen", "فولكس فاجن": "volkswagen", "vw": "volkswagen",
+        "fiat": "fiat", "فيات": "fiat",
+        "jeep": "jeep", "جيب": "jeep",
+        "ford": "ford", "فورد": "ford",
+        "honda": "honda", "هوندا": "honda",
+        "mazda": "mazda", "مازدا": "mazda",
+        "suzuki": "suzuki", "سوزوكي": "suzuki",
+        "opel": "opel", "أوبل": "opel",
+        "subaru": "subaru", "سوبارو": "subaru",
+        "byd": "byd", "بي واي دي": "byd"
     }
+
     models_dict = {
-        "sportage": "sportage", "سبورتاج": "sportage", "cla": "cla", "توسان": "tucson", 
-        "tucson": "tucson", "corolla": "corolla", "كورولا": "corolla", "c180": "c180", "sunny": "sunny", "صني": "sunny"
+        "sportage": "sportage", "سبورتاج": "sportage",
+        "corolla": "corolla", "كورولا": "corolla",
+        "tucson": "tucson", "توسان": "tucson",
+        "c180": "c180", "c-class": "c180", "c 180": "c180", "cla": "cla", "e200": "e200",
+        "sunny": "sunny", "صني": "sunny",
+        "cerato": "cerato", "سيراتو": "cerato",
+        "elantra": "elantra", "النترا": "elantra", "إلنترا": "elantra",
+        "accent": "accent", "اكسنت": "accent", "أكسنت": "accent",
+        "pegas": "pegas", "بيجاس": "pegas",
+        "yaris": "yaris", "ياريس": "yaris",
+        "fortuner": "fortuner", "فورتشنر": "fortuner",
+        "320i": "320i", "320": "320i", "520i": "520i", "520": "520i",
+        "megane": "megane", "ميجان": "megane",
+        "lanos": "lanos", "لانس": "lanos",
+        "optra": "optra", "أوبترا": "optra"
     }
 
-    if query:
-        for k, v in brands_dict.items():
-            if k in q_lower:
-                detected_brand = v
-                break
+    for k, v in brands_dict.items():
+        if k in q_lower:
+            detected_brand = v
+            break
 
-        for k, v in models_dict.items():
-            if k in q_lower:
-                detected_model = v
-                break
+    for k, v in models_dict.items():
+        if k in q_lower:
+            detected_model = v
+            break
+
+    if not detected_brand:
+        words = [w for w in re.findall(r'\w+', q_lower) if not w.isdigit()]
+        if words:
+            detected_brand = words[0]
+        else:
+            detected_brand = query
 
     ads = live_engine.scrape_hatla2ee(detected_brand, detected_model)
     sub_df = pd.DataFrame(ads)
 
     if not sub_df.empty:
-        sub_df = sub_df.sort_values("year", ascending=False).head(6)
+        sub_df = sub_df.sort_values("year", ascending=False).head(10)
 
     formatted_results = process_search_results(sub_df, query=query)
     return jsonify({
         "query": query,
         "brand": detected_brand,
-        "model": detected_model,
+        "model": detected_model or "",
         "results": formatted_results
     })
 
