@@ -333,15 +333,19 @@ def process_search_results(df: pd.DataFrame, query: str = "") -> list:
             print("CatBoost valuation error:", e)
             predicted_prices = []
 
-    if not predicted_prices or len(predicted_prices) != len(df):
-        predicted_prices = []
+    # Ensure every record receives a valid fair price prediction
+    if not predicted_prices or len(predicted_prices) != len(df) or any(p is None for p in predicted_prices):
+        new_preds = []
         for idx, r in df.iterrows():
-            b = str(r.get("brand", "Kia"))
-            m = str(r.get("model", "Sportage"))
-            y = int(r.get("year", 2024)) if r.get("year") else 2024
-            km = r.get("mileage")
-            p_fair = evaluate_matrix_fair_price(b, m, y, km)
-            predicted_prices.append(p_fair)
+            if idx < len(predicted_prices) and predicted_prices[idx] is not None:
+                new_preds.append(predicted_prices[idx])
+            else:
+                b = str(r.get("brand", "Kia"))
+                m = str(r.get("model", "Sportage"))
+                y = int(r.get("year", 2024)) if r.get("year") else 2024
+                km = r.get("mileage")
+                new_preds.append(evaluate_matrix_fair_price(b, m, y, km))
+        predicted_prices = new_preds
 
     out_records = []
     for idx, r in df.iterrows():
