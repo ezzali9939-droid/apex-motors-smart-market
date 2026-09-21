@@ -1,3 +1,4 @@
+--no-deps
 requests
 beautifulsoup4
 pandas
@@ -5,3 +6,10 @@ numpy
 joblib
 catboost
 flask
+six
+python-dateutil
+urllib3
+certifi
+idna
+charset-normalizer
+tzdata

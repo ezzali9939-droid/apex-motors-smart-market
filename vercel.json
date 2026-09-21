@@ -3,10 +3,7 @@
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": {
-        "excludeFiles": "{matplotlib**,plotly**,scipy**,graphviz**,fonttools**,contourpy**}"
-      }
+      "use": "@vercel/python"
     },
     {
       "src": "public/**",
