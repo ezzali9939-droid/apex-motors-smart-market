@@ -287,10 +287,12 @@ def load_components():
     proc, mod, val = None, None, None
     if HAS_TORCH:
         try:
+            device_target = "cuda" if torch.cuda.is_available() and torch.cuda.device_count() > 0 else "cpu"
             proc = AutoImageProcessor.from_pretrained(VISION_MODEL)
-            mod = AutoModelForImageClassification.from_pretrained(VISION_MODEL).to(DEVICE)
+            mod = AutoModelForImageClassification.from_pretrained(VISION_MODEL).to(device_target)
             mod.eval()
-        except Exception:
+        except Exception as e:
+            print("Vision Model Load Error:", e)
             proc, mod = None, None
     if os.path.exists("apex_catboost_valuation.joblib"):
         try:
@@ -302,15 +304,23 @@ def load_components():
 img_processor, car_vision_model, full_pricing_pipeline = load_components()
 
 def classify_car(img):
-    if HAS_TORCH and img_processor is not None and car_vision_model is not None:
+    if HAS_TORCH and img_processor is not None and car_vision_model is not None and img is not None:
         try:
-            inputs = img_processor(images=img.convert("RGB"), return_tensors="pt").to(DEVICE)
+            image = img.convert("RGB")
+            device = next(car_vision_model.parameters()).device
+            
+            inputs = img_processor(images=image, return_tensors="pt").to(device)
             with torch.inference_mode():
-                logits = car_vision_model(**inputs).logits
+                outputs = car_vision_model(**inputs)
+                logits = outputs.logits
                 idx = torch.argmax(logits, dim=-1).item()
-            lbl = car_vision_model.config.id2label[idx].replace("_", " ")
-            return lbl.title()
-        except Exception:
+                
+            id2label = getattr(car_vision_model.config, "id2label", None)
+            if id2label and idx in id2label:
+                lbl = str(id2label[idx]).replace("_", " ")
+                return lbl.title()
+        except Exception as e:
+            print(f"⚠️ Vision AI Classification Error: {str(e)}")
             pass
     return ""
 
@@ -349,7 +359,7 @@ class DualPlatformMarketScraper:
 
         clean_b = brand.lower().strip()
         clean_m = model.lower().strip() if model else ""
-        
+
         target_url = f"{self.base_url}/ar/car/{clean_b}"
         if clean_m:
             target_url += f"/{clean_m.replace(' ', '-')}"
@@ -500,29 +510,28 @@ def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataF
         try:
             eval_df = results_df.copy()
             current_year = 2026
-            
+
             years = pd.to_numeric(eval_df['year'], errors='coerce').fillna(2024)
             raw_mileages = pd.to_numeric(eval_df['mileage'], errors='coerce')
             mileages = raw_mileages.fillna(122000.0)
-            
+
             eval_df['car_age'] = (current_year - years).clip(lower=0)
             eval_df['km_per_year'] = np.where(eval_df['car_age'] > 0, mileages / eval_df['car_age'].replace(0, 1), mileages)
             eval_df['fuel_type'] = eval_df.get('fuel_type', pd.Series(['Benzine']*len(results_df))).fillna('Benzine')
             eval_df['car_condition'] = np.where(raw_mileages == 0, 'New', 'Used')
             eval_df['condition_tag'] = eval_df.get('condition_tag', pd.Series(['Fabrika']*len(results_df))).fillna('Fabrika')
             eval_df['trim_tier'] = eval_df.get('trim_tier', pd.Series(['Topline']*len(results_df))).fillna('Topline')
-            
+
             num_cols = getattr(full_pricing_pipeline, 'num_cols', ['year', 'mileage', 'car_age', 'km_per_year'])
             cat_cols = getattr(full_pricing_pipeline, 'cat_cols', ['brand', 'model', 'location', 'transmission', 'fuel_type', 'car_condition', 'condition_tag', 'trim_tier'])
             medians = getattr(full_pricing_pipeline, 'medians', {})
 
             for c in num_cols:
                 eval_df[c] = pd.to_numeric(eval_df.get(c, 0), errors="coerce").fillna(medians.get(c, 0))
-                
-            # Title Case categorical features for CatBoost
+
             for c in cat_cols:
                 eval_df[c] = eval_df.get(c, "Missing").fillna("Missing").astype(str).str.title()
-                
+
             feature_df = eval_df[num_cols + cat_cols]
             pool = Pool(feature_df, cat_features=cat_cols)
             preds_log = full_pricing_pipeline.model.predict(pool)
@@ -573,10 +582,10 @@ def hybrid_search(user_query: str = "", top_k: int = 6):
     q = user_query.lower().strip()
     if not q:
         return pd.DataFrame()
-        
+
     detected_brand = None
     detected_model = None
-    
+
     brands_dict = {
         "kia": "kia", "كيا": "kia",
         "mercedes": "mercedes", "مرسيدس": "mercedes", "مرسيدس-بنز": "mercedes",
@@ -654,7 +663,7 @@ with st.form("search_form", clear_on_submit=False):
         user_query = st.text_input("Search", placeholder="Type your car requirements and press Enter...", label_visibility="collapsed")
     with c_up:
         uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
-    
+
     submitted = st.form_submit_button("Search Market", use_container_width=True)
 
 if submitted or user_query or uploaded_file:
