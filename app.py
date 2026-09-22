@@ -312,14 +312,13 @@ def classify_car(img):
                 conf, idx = torch.max(probs, dim=-1)
                 lbl = car_vision_model.config.id2label[idx.item()].replace("_", " ")
             
-            # Intelligent Filter: Ignore generic or inaccurate tags from the generic model
-            bad_tags = ["moving van", "cab", "limousine", "minivan", "recreational vehicle", "garbage truck", "fire engine", "trailer", "tow truck"]
-            if lbl.lower() in bad_tags:
-                return "Kia Sportage" # Safe smart automotive default for high-end queries
+            # Force override for any non-car classification artifact
+            if "moving van" in lbl.lower() or "truck" in lbl.lower() or "van" in lbl.lower():
+                return "Mercedes Benz"
             return lbl.title()
         except Exception:
             pass
-    return "Kia Sportage"
+    return "Mercedes Benz"
 
 DETAIL_URL_PATTERN = re.compile(r'/(?:car|new-car)/[^\?#]*?\d{5,}$', re.IGNORECASE)
 ARABIC_TO_ENGLISH_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
@@ -624,7 +623,7 @@ def hybrid_search(user_query: str = "", top_k: int = 6):
             break
 
     if not detected_brand:
-        detected_brand = "kia"
+        detected_brand = "mercedes"
 
     ads = live_engine.scrape_hatla2ee(detected_brand, detected_model)
     sub_df = pd.DataFrame(ads)
