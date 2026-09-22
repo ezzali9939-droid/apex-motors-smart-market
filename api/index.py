@@ -254,6 +254,43 @@ def calculate_match_score(query: str, item_name: str, brand: str, model: str, ye
         score = min(score + 4.0, 99.8)
     return round(min(score, 99.8), 1)
 
+def predict_fallback_fair_price(brand, model, year, mileage, transmission='Automatic', condition_tag='Fabrika'):
+    brand = str(brand or '').lower().strip()
+    model = str(model or '').lower().strip()
+    year = int(year) if year else 2024
+    mileage = float(mileage) if mileage is not None else 100000.0
+    
+    base_market_prices = {
+        ('kia', 'sportage'): 2400000.0,
+        ('toyota', 'corolla'): 1650000.0,
+        ('hyundai', 'tucson'): 2350000.0,
+        ('mercedes', 'c180'): 3200000.0,
+        ('bmw', '320i'): 3100000.0,
+        ('nissan', 'sunny'): 850000.0,
+        ('hyundai', 'elantra'): 1400000.0,
+        ('kia', 'cerato'): 1300000.0,
+        ('mg', 'mg'): 1200000.0,
+        ('renault', 'megane'): 1350000.0,
+        ('chevrolet', 'optra'): 750000.0,
+    }
+    
+    base_2026 = base_market_prices.get((brand, model))
+    if not base_2026:
+        brand_bases = {'mercedes': 3000000, 'bmw': 2900000, 'audi': 2800000, 'kia': 1800000, 'hyundai': 1700000, 'toyota': 1750000, 'nissan': 900000}
+        base_2026 = float(brand_bases.get(brand, 1500000.0))
+        
+    age = max(0, 2026 - year)
+    depreciated = base_2026 * ((1.0 - 0.075) ** age)
+    
+    expected_km = age * 15000.0
+    km_diff = mileage - expected_km
+    km_adj = - (km_diff * 1.5)
+    
+    val = depreciated + km_adj
+    if str(transmission).lower() == 'manual': val *= 0.93
+    if str(condition_tag).lower() == 'fabrika': val *= 1.03
+    return float(round(max(val, 150000.0), 0))
+
 def process_search_results(ads: list, query: str = "") -> list:
     if not ads:
         return []
@@ -311,6 +348,23 @@ def process_search_results(ads: list, query: str = "") -> list:
         except Exception as e:
             print("CatBoost valuation error:", e)
             predicted_prices = [None] * len(ads)
+
+    # Apply fallback valuation for any uncalculated items
+    for idx, r in enumerate(ads):
+        if idx >= len(predicted_prices) or predicted_prices[idx] is None:
+            fb_val = predict_fallback_fair_price(
+                brand=r.get('brand'),
+                model=r.get('model'),
+                year=r.get('year'),
+                mileage=r.get('mileage'),
+                transmission=r.get('transmission'),
+                condition_tag=r.get('condition_tag')
+            )
+            if idx < len(predicted_prices):
+                predicted_prices[idx] = fb_val
+            else:
+                predicted_prices.append(fb_val)
+
 
     out_records = []
     for idx, r in enumerate(ads):
