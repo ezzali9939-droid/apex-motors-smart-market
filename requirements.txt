@@ -1,6 +1,7 @@
 requests
 beautifulsoup4
 numpy
+catboost
 joblib
 pillow
 flask

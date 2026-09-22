@@ -3,7 +3,7 @@ import re
 import io
 import sys
 from urllib.parse import urljoin, urlparse
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import requests
 from bs4 import BeautifulSoup
 import numpy as np
@@ -528,5 +528,18 @@ def search():
         "results": formatted_results
     })
 
+@app.route("/", methods=["GET"])
+def serve_index():
+    public_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public")
+    return send_from_directory(public_dir, "index.html")
+
+@app.route("/<path:path>", methods=["GET"])
+def serve_static(path):
+    public_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public")
+    if os.path.exists(os.path.join(public_dir, path)):
+        return send_from_directory(public_dir, path)
+    return send_from_directory(public_dir, "index.html")
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+

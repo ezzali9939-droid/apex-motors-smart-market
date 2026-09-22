@@ -8,6 +8,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+
     <style>
         :root {
             --neon-blue: #38bdf8;
@@ -767,21 +770,50 @@
 
                 if (currentReqId !== activeRequestId) return;
 
-                if (!response.ok || !data.success) {
-                    showError(`⚠️ ${data.error || "Unable to identify vehicle in image."}`);
+                if (response.ok && data.success && data.label) {
+                    const detectedLabel = data.label;
+                    const confidence = data.confidence ? ` (${data.confidence}%)` : '';
+                    badge.innerHTML = `📷 Detected Vehicle: <strong>${detectedLabel}</strong>${confidence}`;
+                    badgeBox.style.display = "block";
+
+                    document.getElementById("search-input").value = detectedLabel;
+                    initiateNewSearch(detectedLabel);
                     return;
                 }
-
-                const detectedLabel = data.label;
-                const confidence = data.confidence ? ` (${data.confidence}%)` : '';
-                badge.innerHTML = `📷 Detected Vehicle: <strong>${detectedLabel}</strong>${confidence}`;
-                badgeBox.style.display = "block";
-
-                document.getElementById("search-input").value = detectedLabel;
-                initiateNewSearch(detectedLabel);
             } catch (err) {
-                if (currentReqId !== activeRequestId) return;
-                showError("⚠️ Network error during image processing. Please check connection and try again.");
+                console.warn("Server API image classification error:", err);
+            }
+
+            // Client-side Browser AI Vision Fallback
+            if (window.mobilenet) {
+                try {
+                    const imgEl = document.getElementById("preview-img");
+                    if (imgEl && imgEl.src) {
+                        spinner.innerHTML = "⚡ Running Browser AI Vision model...";
+                        const model = await mobilenet.load();
+                        const predictions = await model.classify(imgEl);
+                        if (currentReqId !== activeRequestId) return;
+
+                        if (predictions && predictions.length > 0) {
+                            const topLabel = predictions[0].className.split(',')[0].trim();
+                            const conf = Math.round(predictions[0].probability * 100);
+                            const cleanLabel = topLabel.replace(/(sports car|sport car|convertible|coupe|minivan|pickup|limousine|beach wagon|racer|car)/gi, function(m){ return m.toUpperCase(); });
+                            
+                            badge.innerHTML = `📷 Identified Vehicle (AI Vision): <strong>${cleanLabel}</strong> (${conf}%)`;
+                            badgeBox.style.display = "block";
+
+                            document.getElementById("search-input").value = cleanLabel;
+                            initiateNewSearch(cleanLabel);
+                            return;
+                        }
+                    }
+                } catch (clientErr) {
+                    console.warn("Client MobileNet fallback error:", clientErr);
+                }
+            }
+
+            if (currentReqId === activeRequestId) {
+                showError("⚠️ Unable to identify vehicle model in uploaded photo. Try a clear exterior car image or search by text above.");
             }
         }
 
