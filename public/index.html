@@ -4,38 +4,39 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Apex Motors | Smart Car Market</title>
+    <meta name="description" content="Find the right car in Egypt with AI-powered search, real market listings, and fair price insights. Search by text or upload a car photo.">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚗</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
 
     <style>
+        /* ── Design tokens ──────────────────────────────────────────────── */
         :root {
-            --neon-blue: #38bdf8;
-            --darkest-bg: #030712;
-            --white: #f7f7f7;
-            --muted: #a9adb5;
+            --blue: #38bdf8;
+            --blue-dim: rgba(56,189,248,.18);
+            --blue-glow: rgba(56,189,248,.45);
+            --bg: #030712;
+            --bg-card: rgba(10,13,20,.88);
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --border: rgba(56,189,248,.22);
+            --radius-card: 16px;
+            --shadow-card: 0 12px 32px rgba(0,0,0,.55);
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            background-color: var(--darkest-bg);
-            color: var(--white);
+            background: var(--bg);
+            color: var(--text);
             font-family: 'Inter', sans-serif;
             min-height: 100vh;
             overflow-x: hidden;
-            position: relative;
         }
 
-        /* Fixed background image container */
-        .background-car-container {
+        /* ── Background + light sweep ───────────────────────────────────── */
+        .bg-wrap {
             position: fixed;
             inset: 0;
             z-index: 0;
@@ -43,123 +44,99 @@
             overflow: hidden;
         }
 
-        .background-car {
+        .bg-img {
             position: absolute;
             inset: 0;
             background-image: url("/mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg");
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
-            opacity: .85;
+            opacity: .82;
         }
 
-        .background-car:before {
+        .bg-img::before {
             content: "";
             position: absolute;
             inset: 0;
             background:
-                linear-gradient(90deg, rgba(3,7,18,.85) 0%, rgba(3,7,18,.45) 48%, rgba(3,7,18,.85) 100%),
-                linear-gradient(180deg, rgba(3,7,18,.4) 0%, rgba(3,7,18,.2) 46%, rgba(3,7,18,.9) 100%);
+                linear-gradient(90deg, rgba(3,7,18,.88) 0%, rgba(3,7,18,.42) 48%, rgba(3,7,18,.88) 100%),
+                linear-gradient(180deg, rgba(3,7,18,.35) 0%, rgba(3,7,18,.15) 46%, rgba(3,7,18,.92) 100%);
         }
 
-        .background-car:after {
+        .bg-img::after {
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at 50% 38%, rgba(56,189,248,.08), transparent 40%);
+            background: radial-gradient(circle at 50% 38%, rgba(56,189,248,.07), transparent 42%);
         }
 
-        /* 1. Animated Studio Light Reflection Overlay across car body */
-        .light-sweep-overlay {
+        /* Light sweep — only over the car area */
+        .sweep-zone {
             position: absolute;
-            top: 25%;
-            left: 10%;
-            width: 80%;
-            height: 55%;
-            pointer-events: none;
-            z-index: 1;
+            top: 18%;
+            left: 8%;
+            width: 84%;
+            height: 60%;
             overflow: hidden;
-            border-radius: 40%;
+            border-radius: 42%;
             mix-blend-mode: overlay;
+            pointer-events: none;
         }
 
-        .light-sweep-beam {
+        .sweep-beam {
             position: absolute;
-            top: -50%;
-            left: -100%;
-            width: 60%;
-            height: 200%;
+            top: -60%;
+            left: -110%;
+            width: 55%;
+            height: 220%;
             background: linear-gradient(
-                115deg,
+                112deg,
                 transparent 0%,
-                rgba(255, 255, 255, 0.0) 30%,
-                rgba(255, 255, 255, 0.35) 50%,
-                rgba(255, 255, 255, 0.0) 70%,
+                rgba(255,255,255,0) 28%,
+                rgba(255,255,255,.42) 50%,
+                rgba(255,255,255,0) 72%,
                 transparent 100%
             );
-            transform: skewX(-25deg);
-            filter: blur(14px);
-            animation: lightSweep 7s infinite ease-in-out;
+            transform: skewX(-22deg);
+            filter: blur(12px);
+            animation: sweep 7s ease-in-out infinite;
         }
 
-        @keyframes lightSweep {
-            0% {
-                left: -120%;
-                opacity: 0;
-            }
-            15% {
-                opacity: 0.85;
-            }
-            45% {
-                left: 140%;
-                opacity: 0.85;
-            }
-            60%, 100% {
-                left: 140%;
-                opacity: 0;
-            }
+        @keyframes sweep {
+            0%   { left: -110%; opacity: 0; }
+            12%  { opacity: 1; }
+            48%  { left: 150%; opacity: 1; }
+            62%, 100% { left: 150%; opacity: 0; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .light-sweep-beam {
-                animation: none !important;
-                display: none !important;
-            }
+            .sweep-beam { animation: none !important; opacity: 0 !important; }
         }
 
-        .main-container {
+        /* ── Layout ─────────────────────────────────────────────────────── */
+        .wrap {
             position: relative;
             z-index: 2;
             max-width: 1240px;
             margin: 0 auto;
-            padding: 2.5rem 1.25rem 4rem;
+            padding: 2.5rem 1.25rem 5rem;
         }
 
-        .hero-box {
-            position: relative;
-            min-height: 180px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        /* ── Hero ───────────────────────────────────────────────────────── */
+        .hero {
             text-align: center;
-            margin: 0 auto 1.25rem;
+            margin-bottom: 1.5rem;
         }
 
-        .hero-content {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .hero-kicker {
+        .hero-pill {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 7px 16px;
-            margin-bottom: 12px;
-            border: 1px solid rgba(56, 189, 248, 0.25);
+            padding: 6px 16px;
+            margin-bottom: 14px;
+            border: 1px solid rgba(56,189,248,.28);
             border-radius: 999px;
-            background: rgba(15, 23, 42, 0.7);
+            background: rgba(15,23,42,.72);
             color: #e2e8f0;
             font-size: .72rem;
             font-weight: 800;
@@ -167,92 +144,76 @@
             backdrop-filter: blur(10px);
         }
 
-        .hero-title {
-            margin: 0;
+        h1 {
             color: #fff;
             font-size: clamp(2.6rem, 5vw, 4.2rem);
-            line-height: 1.1;
             font-weight: 800;
             letter-spacing: -2px;
+            line-height: 1.1;
             text-shadow: 0 10px 40px rgba(0,0,0,.9);
         }
 
-        .hero-title span {
-            color: var(--neon-blue);
-            text-shadow: 0 0 30px rgba(56, 189, 248, 0.5);
-        }
-
-        .hero-subtitle {
-            color: #d1d5db;
-            font-size: .95rem;
-            max-width: 620px;
-            margin: 12px auto 0;
-            line-height: 1.55;
-            text-shadow: 0 3px 18px #000;
-        }
+        h1 span { color: var(--blue); text-shadow: 0 0 30px rgba(56,189,248,.5); }
 
         .hero-line {
             width: 54px;
             height: 3px;
-            background: var(--neon-blue);
+            background: var(--blue);
             border-radius: 99px;
-            margin: 12px auto 0;
-            box-shadow: 0 0 20px rgba(56,189,248,.5);
+            margin: 14px auto 0;
+            box-shadow: 0 0 20px var(--blue-glow);
         }
 
-        .feature-row {
+        .hero-sub {
+            color: #d1d5db;
+            font-size: .95rem;
+            max-width: 620px;
+            margin: 12px auto 0;
+            line-height: 1.6;
+            text-shadow: 0 3px 18px #000;
+        }
+
+        /* ── Feature badges ─────────────────────────────────────────────── */
+        .feat-row {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             max-width: 760px;
-            margin: 16px auto 25px;
-            gap: 0;
+            margin: 18px auto 26px;
         }
 
-        .feature-item {
+        .feat-item {
             text-align: center;
-            padding: 5px 18px;
-            border-right: 1px solid rgba(255,255,255,.14);
+            padding: 5px 16px;
+            border-right: 1px solid rgba(255,255,255,.12);
         }
 
-        .feature-item:last-child {
-            border-right: 0;
+        .feat-item:last-child { border-right: none; }
+        .feat-icon { color: var(--blue); font-size: 1rem; margin-bottom: 3px; }
+        .feat-title { color: #fff; font-size: .76rem; font-weight: 700; }
+        .feat-desc { color: #9ca3af; font-size: .64rem; margin-top: 2px; }
+
+        @media (max-width: 640px) {
+            .feat-row { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+            .feat-item { border-right: none; }
         }
 
-        .feature-icon {
-            color: var(--neon-blue);
-            font-size: 1rem;
-            margin-bottom: 3px;
-        }
-
-        .feature-title {
-            color: #fff;
-            font-size: .78rem;
-            font-weight: 700;
-        }
-
-        .feature-desc {
-            color: #9ca3af;
-            font-size: .65rem;
-            margin-top: 2px;
-        }
-
-        .search-box-container {
+        /* ── Search bar ─────────────────────────────────────────────────── */
+        .search-wrap {
             max-width: 760px;
-            margin: 0 auto 20px;
-            position: relative;
+            margin: 0 auto 18px;
         }
 
         .search-form {
-            background: linear-gradient(180deg, rgba(15, 23, 42, 0.92) 0%, rgba(3, 7, 18, 0.96) 100%);
-            border: 1.2px solid rgba(56, 189, 248, 0.4);
-            border-radius: 999px;
-            box-shadow: 0 16px 45px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(56, 189, 248, 0.2);
-            backdrop-filter: blur(18px);
-            padding: 0 16px 0 24px;
             display: flex;
             align-items: center;
             height: 54px;
-            gap: 12px;
+            padding: 0 14px 0 24px;
+            gap: 10px;
+            background: linear-gradient(180deg, rgba(15,23,42,.93), rgba(3,7,18,.97));
+            border: 1.2px solid rgba(56,189,248,.42);
+            border-radius: 999px;
+            box-shadow: 0 16px 48px rgba(0,0,0,.75), inset 0 1px 0 rgba(56,189,248,.18);
+            backdrop-filter: blur(18px);
         }
 
         .search-input {
@@ -260,162 +221,317 @@
             background: transparent;
             border: none;
             outline: none;
-            color: #ffffff;
-            font-size: 0.95rem;
+            color: #fff;
+            font-size: .95rem;
             font-family: 'Inter', sans-serif;
         }
 
-        .search-input::placeholder {
-            color: #94a3b8;
-        }
+        .search-input::placeholder { color: #94a3b8; }
 
         .cam-btn {
             background: transparent;
             border: none;
             cursor: pointer;
-            font-size: 1.25rem;
-            opacity: 0.85;
-            transition: transform 0.2s ease;
+            font-size: 1.22rem;
+            opacity: .85;
+            transition: transform .2s, opacity .2s;
+            flex-shrink: 0;
         }
 
-        .cam-btn:hover {
-            transform: scale(1.2);
-            opacity: 1;
+        .cam-btn:hover { transform: scale(1.18); opacity: 1; }
+
+        .search-btn {
+            background: var(--blue-dim);
+            border: 1px solid var(--blue);
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: .85rem;
+            font-weight: 700;
+            padding: 7px 18px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background .2s, box-shadow .2s;
+            flex-shrink: 0;
         }
 
-        .image-preview-container {
-            max-width: 760px;
-            margin: 12px auto 0;
+        .search-btn:hover {
+            background: var(--blue-glow);
+            box-shadow: 0 0 14px var(--blue-glow);
+        }
+
+        /* ── Image preview ──────────────────────────────────────────────── */
+        .img-preview-wrap {
             display: none;
             align-items: center;
             gap: 12px;
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(56, 189, 248, 0.3);
+            max-width: 760px;
+            margin: 10px auto 0;
+            background: rgba(15,23,42,.82);
+            border: 1px solid rgba(56,189,248,.3);
             border-radius: 12px;
             padding: 8px 14px;
             backdrop-filter: blur(10px);
         }
 
-        .preview-img {
+        .img-preview-wrap.visible { display: flex; }
+
+        .preview-thumb {
             width: 46px;
             height: 46px;
             object-fit: cover;
             border-radius: 8px;
-            border: 1px solid var(--neon-blue);
+            border: 1px solid var(--blue);
+            flex-shrink: 0;
         }
 
-        .preview-details {
-            flex: 1;
-            font-size: 0.85rem;
-            color: #e2e8f0;
-        }
+        .preview-meta { flex: 1; font-size: .83rem; color: #e2e8f0; }
+        .preview-meta small { color: #94a3b8; font-size: .72rem; display: block; margin-top: 2px; }
 
-        .preview-remove-btn {
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid rgba(239, 68, 68, 0.4);
+        .remove-btn {
+            background: rgba(239,68,68,.18);
+            border: 1px solid rgba(239,68,68,.4);
             color: #fca5a5;
             border-radius: 6px;
             padding: 4px 10px;
             cursor: pointer;
-            font-size: 0.8rem;
-            transition: all 0.2s;
+            font-size: .78rem;
+            transition: background .2s;
         }
 
-        .preview-remove-btn:hover {
-            background: rgba(239, 68, 68, 0.4);
-        }
+        .remove-btn:hover { background: rgba(239,68,68,.35); }
 
-        .detected-badge-box {
+        /* ── Detected badge ─────────────────────────────────────────────── */
+        .detected-wrap {
             text-align: center;
-            margin: 15px 0;
+            margin: 14px 0;
             display: none;
         }
 
+        .detected-wrap.visible { display: block; }
+
         .detected-badge {
-            background: rgba(56, 189, 248, 0.15);
-            border: 1px solid var(--neon-blue);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(56,189,248,.12);
+            border: 1px solid var(--blue);
             color: #fff;
-            padding: 6px 18px;
+            padding: 7px 20px;
             border-radius: 20px;
-            font-size: 0.9rem;
-            display: inline-block;
+            font-size: .88rem;
         }
 
-        .results-header {
-            color: #fff;
-            font-size: 1.15rem;
+        .detected-alts {
+            margin-top: 8px;
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .alt-pill {
+            background: rgba(56,189,248,.07);
+            border: 1px solid rgba(56,189,248,.25);
+            color: #94a3b8;
+            padding: 3px 12px;
+            border-radius: 999px;
+            font-size: .73rem;
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .alt-pill:hover { background: var(--blue-dim); color: #fff; }
+
+        /* ── Status: spinner / error ────────────────────────────────────── */
+        .spinner {
+            text-align: center;
+            color: var(--blue);
+            font-weight: 600;
+            font-size: .93rem;
+            margin: 40px 0;
+            display: none;
+        }
+
+        .spinner.visible { display: block; }
+
+        @keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+        .spinner.visible { animation: pulse 1.4s ease-in-out infinite; }
+
+        .error-box {
+            max-width: 760px;
+            margin: 22px auto;
+            background: rgba(239,68,68,.1);
+            border: 1px solid rgba(239,68,68,.48);
+            color: #fca5a5;
+            padding: 14px 18px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: .9rem;
+            display: none;
+        }
+
+        .error-box.visible { display: block; }
+
+        /* ── Results header ─────────────────────────────────────────────── */
+        .results-hdr {
+            color: #e2e8f0;
+            font-size: 1.05rem;
             font-weight: 700;
-            margin: 35px auto 18px;
+            margin: 32px auto 16px;
             max-width: 1200px;
             display: none;
         }
 
-        /* 2. Compact 3-Column Desktop Grid Layout */
-        .results-grid {
+        .results-hdr.visible { display: block; }
+
+        /* ── 3-col compact grid ─────────────────────────────────────────── */
+        .grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 22px;
+            gap: 20px;
             max-width: 1200px;
             margin: 0 auto;
         }
 
-        @media (max-width: 992px) {
-            .results-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
+        @media (max-width: 992px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
 
-        @media (max-width: 640px) {
-            .results-grid {
-                grid-template-columns: 1fr;
-            }
-            .feature-row {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 15px;
-            }
-            .feature-item {
-                border-right: none;
-            }
-        }
-
-        .car-card {
-            background: rgba(10, 12, 16, 0.85);
-            border: 1.2px solid rgba(56, 189, 248, 0.22);
-            border-radius: 16px;
+        /* ── Card ───────────────────────────────────────────────────────── */
+        .card {
+            background: var(--bg-card);
+            border: 1.2px solid var(--border);
+            border-radius: var(--radius-card);
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 14px 35px rgba(0,0,0,.6);
+            box-shadow: var(--shadow-card);
             backdrop-filter: blur(14px);
-            transition: all 0.25s ease;
+            transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
         }
 
-        .car-card:hover {
-            border-color: rgba(56, 189, 248, 0.55);
+        .card:hover {
             transform: translateY(-3px);
-            box-shadow: 0 18px 45px rgba(56, 189, 248, 0.15);
+            border-color: rgba(56,189,248,.5);
+            box-shadow: 0 18px 44px rgba(56,189,248,.14);
         }
 
-        .card-img-wrap {
+        /* ── Gallery ────────────────────────────────────────────────────── */
+        .gallery {
             position: relative;
             width: 100%;
-            height: 175px;
-            background: #090d16;
+            height: 176px;
+            background: #080c14;
             overflow: hidden;
+            flex-shrink: 0;
         }
 
-        .card-img {
+        .gallery-track {
+            display: flex;
+            height: 100%;
+            transition: transform .3s ease;
+            will-change: transform;
+        }
+
+        .gallery-slide {
+            min-width: 100%;
+            height: 100%;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .gallery-img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transition: transform 0.3s ease;
+            transition: transform .3s ease;
         }
 
-        .car-card:hover .card-img {
-            transform: scale(1.04);
+        .card:hover .gallery-img { transform: scale(1.04); }
+
+        /* Blurred "more" panel — the last slide */
+        .gallery-more-slide {
+            min-width: 100%;
+            height: 100%;
+            position: relative;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(8,12,20,.6);
+            cursor: pointer;
         }
 
-        .card-img-placeholder {
+        .gallery-more-slide::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            backdrop-filter: blur(6px);
+        }
+
+        .gallery-more-label {
+            position: relative;
+            z-index: 1;
+            color: #fff;
+            font-size: .88rem;
+            font-weight: 700;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .gallery-more-label small { display: block; color: var(--blue); font-size: .72rem; margin-top: 4px; }
+
+        /* Arrows */
+        .gallery-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(3,7,18,.7);
+            border: 1px solid rgba(56,189,248,.3);
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #fff;
+            font-size: .7rem;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity .2s, background .2s;
+            user-select: none;
+        }
+
+        .gallery:hover .gallery-arrow { opacity: 1; }
+        .gallery-arrow:hover { background: rgba(56,189,248,.28); }
+        .gallery-arrow.prev { left: 6px; }
+        .gallery-arrow.next { right: 6px; }
+        .gallery-arrow[hidden] { display: none; }
+
+        /* Dots */
+        .gallery-dots {
+            position: absolute;
+            bottom: 6px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 4px;
+            z-index: 10;
+        }
+
+        .gallery-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: rgba(255,255,255,.4);
+            transition: background .2s, transform .2s;
+        }
+
+        .gallery-dot.active { background: var(--blue); transform: scale(1.35); }
+
+        /* No-image placeholder */
+        .no-photo {
             width: 100%;
             height: 100%;
             display: flex;
@@ -424,14 +540,17 @@
             justify-content: center;
             background: linear-gradient(135deg, #0b111e 0%, #050811 100%);
             color: #475569;
+            gap: 6px;
+            font-size: .72rem;
         }
 
+        /* ── Card body ──────────────────────────────────────────────────── */
         .card-body {
-            padding: 16px;
+            padding: 14px 16px 16px;
             display: flex;
             flex-direction: column;
             flex: 1;
-            gap: 10px;
+            gap: 9px;
         }
 
         .card-title-row {
@@ -442,542 +561,658 @@
         }
 
         .card-title {
-            font-size: 1.05rem;
+            font-size: 1rem;
             font-weight: 700;
-            color: #ffffff;
+            color: #fff;
             line-height: 1.3;
         }
 
-        /* Fix contradictory deal badge logic */
-        .deal-badge-great {
-            background: rgba(34,197,94,.15);
-            border: 1px solid rgba(34,197,94,.65);
-            color: #86efac;
+        /* Deal badges */
+        .badge {
+            flex-shrink: 0;
             font-weight: 700;
-            padding: 3px 10px;
+            padding: 3px 9px;
             border-radius: 20px;
-            font-size: .75rem;
+            font-size: .71rem;
             white-space: nowrap;
         }
 
-        .deal-badge-overpriced {
-            background: rgba(239,68,68,.15);
-            border: 1px solid rgba(239,68,68,.65);
-            color: #fca5a5;
-            font-weight: 700;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: .75rem;
-            white-space: nowrap;
-        }
+        .badge-great { background: rgba(34,197,94,.14); border: 1px solid rgba(34,197,94,.6); color: #86efac; }
+        .badge-over  { background: rgba(239,68,68,.14);  border: 1px solid rgba(239,68,68,.6);  color: #fca5a5; }
+        .badge-fair  { background: rgba(56,189,248,.14); border: 1px solid rgba(56,189,248,.6); color: #bae6fd; }
 
-        .deal-badge-fair {
-            background: rgba(56,189,248,.15);
-            border: 1px solid rgba(56,189,248,.65);
-            color: #bae6fd;
-            font-weight: 700;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: .75rem;
-            white-space: nowrap;
-        }
-
-        .deal-badge-none {
-            background: rgba(148, 163, 184, 0.12);
-            border: 1px solid rgba(148, 163, 184, 0.3);
-            color: #94a3b8;
-            font-weight: 600;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: .75rem;
-            white-space: nowrap;
-        }
-
-        .card-specs {
+        /* Specs chips */
+        .specs {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
-            color: #94a3b8;
-            font-size: 0.8rem;
+            gap: 8px;
+            color: var(--muted);
+            font-size: .78rem;
         }
 
-        .card-price-area {
+        /* Pricing area */
+        .price-area {
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
-            margin-top: 4px;
             padding-top: 10px;
-            border-top: 1px solid rgba(255,255,255,0.07);
-        }
-
-        .price-item-label {
-            color: #94a3b8;
-            font-size: 0.75rem;
-            display: block;
-        }
-
-        .price-item-val {
-            color: #ffffff;
-            font-size: 1.15rem;
-            font-weight: 800;
-        }
-
-        .fair-item-val {
-            color: var(--neon-blue);
-            font-size: 1.05rem;
-            font-weight: 700;
-        }
-
-        .unassessed-text {
-            color: #64748b;
-            font-size: 0.82rem;
-            font-weight: 500;
-        }
-
-        .card-footer {
+            border-top: 1px solid rgba(255,255,255,.07);
             margin-top: auto;
-            padding-top: 12px;
         }
 
+        .price-label { color: var(--muted); font-size: .71rem; display: block; margin-bottom: 2px; }
+        .price-val { color: #fff; font-size: 1.1rem; font-weight: 800; }
+        .price-val.missing { color: var(--muted); font-size: .82rem; font-weight: 500; }
+        .est-val { color: var(--blue); font-size: .98rem; font-weight: 700; }
+        .est-val.na { color: #475569; font-size: .78rem; font-weight: 500; }
+
+        /* View button */
         .view-btn {
             display: block;
             width: 100%;
             text-align: center;
-            background: rgba(56, 189, 248, 0.12);
-            border: 1px solid var(--neon-blue);
+            background: var(--blue-dim);
+            border: 1px solid var(--blue);
             color: #fff;
             padding: 8px 14px;
             border-radius: 8px;
             text-decoration: none;
             font-weight: 700;
-            font-size: 0.85rem;
-            transition: all 0.2s ease;
+            font-size: .83rem;
+            transition: background .2s, box-shadow .2s;
+            margin-top: 10px;
         }
 
-        .view-btn:hover {
-            background: rgba(56, 189, 248, 0.28);
-            box-shadow: 0 0 15px rgba(56, 189, 248, 0.35);
-        }
+        .view-btn:hover { background: rgba(56,189,248,.28); box-shadow: 0 0 14px rgba(56,189,248,.32); }
+        .view-btn.disabled { opacity: .4; pointer-events: none; cursor: default; }
 
+        /* ── Load more ──────────────────────────────────────────────────── */
         .load-more-wrap {
             text-align: center;
-            margin: 32px 0 20px;
+            margin: 32px 0 16px;
             display: none;
         }
 
+        .load-more-wrap.visible { display: block; }
+
         .load-more-btn {
-            background: linear-gradient(180deg, rgba(15, 23, 42, 0.9) 0%, rgba(3, 7, 18, 0.95) 100%);
-            border: 1.5px solid var(--neon-blue);
-            color: #ffffff;
-            padding: 12px 32px;
+            background: linear-gradient(180deg, rgba(15,23,42,.92), rgba(3,7,18,.97));
+            border: 1.5px solid var(--blue);
+            color: #fff;
+            padding: 11px 32px;
             border-radius: 999px;
-            font-size: 0.95rem;
+            font-size: .93rem;
             font-weight: 700;
+            font-family: 'Inter', sans-serif;
             cursor: pointer;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.6);
-            transition: all 0.2s ease;
+            box-shadow: 0 8px 28px rgba(0,0,0,.55);
+            transition: background .2s, box-shadow .2s, transform .2s;
         }
 
         .load-more-btn:hover {
-            background: rgba(56, 189, 248, 0.2);
-            box-shadow: 0 0 25px rgba(56, 189, 248, 0.4);
+            background: rgba(56,189,248,.18);
+            box-shadow: 0 0 26px rgba(56,189,248,.38);
             transform: translateY(-2px);
         }
 
-        .empty-state {
+        /* ── Empty state ────────────────────────────────────────────────── */
+        .empty {
             text-align: center;
-            color: #8b929a;
-            margin-top: 50px;
-            font-size: 0.95rem;
+            color: #64748b;
+            margin: 52px 0 0;
+            font-size: .93rem;
+            line-height: 1.7;
         }
 
-        .error-box {
-            max-width: 760px;
-            margin: 25px auto;
-            background: rgba(239, 68, 68, 0.12);
-            border: 1px solid rgba(239, 68, 68, 0.5);
-            color: #fca5a5;
-            padding: 16px;
-            border-radius: 12px;
-            text-align: center;
-            font-size: 0.92rem;
-            display: none;
-        }
-
-        .loading-spinner {
-            text-align: center;
-            color: var(--neon-blue);
-            font-weight: 600;
-            margin: 40px 0;
-            display: none;
-        }
+        .empty strong { color: #94a3b8; }
+        .empty em { color: var(--blue); font-style: normal; }
     </style>
 </head>
 <body>
-    <div class="background-car-container">
-        <div class="background-car"></div>
-        <div class="light-sweep-overlay">
-            <div class="light-sweep-beam"></div>
+
+<!-- ── Background ──────────────────────────────────────────────────────────── -->
+<div class="bg-wrap" aria-hidden="true">
+    <div class="bg-img"></div>
+    <div class="sweep-zone">
+        <div class="sweep-beam"></div>
+    </div>
+</div>
+
+<!-- ── Main ────────────────────────────────────────────────────────────────── -->
+<main class="wrap">
+
+    <!-- Hero -->
+    <header class="hero">
+        <div class="hero-pill">✦ SMART CAR MARKET</div>
+        <h1>Apex <span>Motors</span></h1>
+        <div class="hero-line"></div>
+        <p class="hero-sub">Find the right car, get expert insights, and make smarter decisions with the power of AI.</p>
+    </header>
+
+    <!-- Feature badges -->
+    <div class="feat-row" role="list">
+        <div class="feat-item" role="listitem"><div class="feat-icon">⌁</div><div class="feat-title">Analysis</div><div class="feat-desc">Understand your needs</div></div>
+        <div class="feat-item" role="listitem"><div class="feat-icon">▧</div><div class="feat-title">Image Detection</div><div class="feat-desc">Identify car details</div></div>
+        <div class="feat-item" role="listitem"><div class="feat-icon">◇</div><div class="feat-title">Price Insights</div><div class="feat-desc">Fair market estimates</div></div>
+        <div class="feat-item" role="listitem"><div class="feat-icon">▥</div><div class="feat-title">Smart Results</div><div class="feat-desc">Real live listings</div></div>
+    </div>
+
+    <!-- Search -->
+    <div class="search-wrap">
+        <form class="search-form" id="search-form" onsubmit="event.preventDefault(); initiateSearch();">
+            <input
+                type="text"
+                id="search-input"
+                class="search-input"
+                placeholder="Try 'Toyota Corolla', 'Kia Sportage', 'Mercedes C180'…"
+                autocomplete="off"
+                aria-label="Search for a vehicle"
+            >
+            <button
+                type="button"
+                class="cam-btn"
+                id="cam-btn"
+                title="Upload car image for AI recognition"
+                onclick="triggerFileSelect()"
+                aria-label="Upload car image"
+            >📷</button>
+            <input type="file" id="file-input" accept="image/*" style="display:none" aria-label="Car image file input">
+            <button type="submit" class="search-btn" id="search-btn">Search</button>
+        </form>
+
+        <!-- Image preview -->
+        <div class="img-preview-wrap" id="img-preview-wrap" role="status" aria-live="polite">
+            <img id="preview-thumb" class="preview-thumb" src="" alt="Selected car image preview">
+            <div class="preview-meta">
+                <span id="preview-name">car.jpg</span>
+                <small id="preview-size">Image selected</small>
+            </div>
+            <button class="remove-btn" onclick="clearImage()" type="button" aria-label="Remove selected image">✕ Remove</button>
         </div>
     </div>
 
-    <div class="main-container">
-        <div class="hero-box">
-            <div class="hero-content">
-                <div class="hero-kicker">✦ SMART CAR MARKET</div>
-                <h1 class="hero-title">Apex <span>Motors</span></h1>
-                <div class="hero-line"></div>
-                <div class="hero-subtitle">Find the right car, get expert insights, and make smarter decisions with the power of AI.</div>
-            </div>
-        </div>
-
-        <div class="feature-row">
-            <div class="feature-item"><div class="feature-icon">⌁</div><div class="feature-title">Analysis</div><div class="feature-desc">Understand your needs</div></div>
-            <div class="feature-item"><div class="feature-icon">▧</div><div class="feature-title">Image Detection</div><div class="feature-desc">Identify car details</div></div>
-            <div class="feature-item"><div class="feature-icon">◇</div><div class="feature-title">Price Prediction</div><div class="feature-desc">Get fair market value</div></div>
-            <div class="feature-item"><div class="feature-icon">▥</div><div class="feature-title">Smart Results</div><div class="feature-desc">Best matches for you</div></div>
-        </div>
-
-        <div class="search-box-container">
-            <form class="search-form" id="search-form" onsubmit="event.preventDefault(); initiateNewSearch();">
-                <input type="text" id="search-input" class="search-input" placeholder="Type your car requirements and press Enter..." autocomplete="off">
-                <button type="button" class="cam-btn" id="cam-btn" title="Upload car image for AI recognition" onclick="triggerImageSelect()">📷</button>
-                <input type="file" id="image-input" accept="image/*" style="display: none;">
-            </form>
-
-            <div class="image-preview-container" id="image-preview-container">
-                <img id="preview-img" class="preview-img" src="" alt="Selected vehicle preview">
-                <div class="preview-details">
-                    <strong id="preview-filename">car.jpg</strong>
-                    <div style="font-size: 0.75rem; color: #94a3b8;" id="preview-filesize">Image selected</div>
-                </div>
-                <button type="button" class="preview-remove-btn" onclick="clearSelectedImage()">✕ Remove</button>
-            </div>
-        </div>
-
-        <div class="detected-badge-box" id="detected-badge-box">
-            <span class="detected-badge" id="detected-badge">📷 Detected Vehicle: --</span>
-        </div>
-
-        <div class="loading-spinner" id="loading-spinner">
-            ⚡ Searching market & running CatBoost valuation...
-        </div>
-
-        <div class="error-box" id="error-box"></div>
-
-        <div class="results-header" id="results-header"></div>
-        <div class="results-grid" id="results-grid"></div>
-
-        <div class="load-more-wrap" id="load-more-wrap">
-            <button type="button" class="load-more-btn" id="load-more-btn" onclick="loadNextPage()">Load More Vehicles 🚗</button>
-        </div>
-
-        <div class="empty-state" id="empty-state">
-            Type your search query above and press <strong>Enter</strong> (e.g. <em>Toyota Corolla</em>, <em>Kia Sportage</em>, <em>Mercedes C180</em>), or click the camera icon 📷 to analyze a vehicle photo.
-        </div>
+    <!-- Detected badge -->
+    <div class="detected-wrap" id="detected-wrap" role="status" aria-live="polite">
+        <div class="detected-badge" id="detected-badge">📷 Detected: <strong id="detected-label">—</strong> <span id="detected-conf"></span></div>
+        <div class="detected-alts" id="detected-alts"></div>
     </div>
 
-    <script>
-        let activeImageFile = null;
-        let activeRequestId = 0;
-        let currentSearchQuery = "";
-        let currentPage = 1;
-        let loadedCount = 0;
+    <!-- Spinner -->
+    <div class="spinner" id="spinner" role="status" aria-live="polite">⚡ <span id="spinner-text">Searching…</span></div>
 
-        function triggerImageSelect() {
-            document.getElementById('image-input').click();
-        }
+    <!-- Error -->
+    <div class="error-box" id="error-box" role="alert"></div>
 
-        document.getElementById('image-input').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            if (!file.type || !file.type.startsWith('image/')) {
-                showError("Selected file is not an image. Please select a JPG or PNG file.");
-                return;
+    <!-- Results header -->
+    <div class="results-hdr" id="results-hdr" aria-live="polite"></div>
+
+    <!-- Grid -->
+    <div class="grid" id="grid" role="list"></div>
+
+    <!-- Load more -->
+    <div class="load-more-wrap" id="load-more-wrap">
+        <button class="load-more-btn" id="load-more-btn" type="button" onclick="loadMore()">
+            Load More Vehicles 🚗
+        </button>
+    </div>
+
+    <!-- Empty state -->
+    <p class="empty" id="empty">
+        Type a car name above and press <strong>Enter</strong> — e.g. <em>Toyota Corolla</em>, <em>Kia Sportage</em>, <em>Mercedes C180</em> — or click <strong>📷</strong> to search by photo.
+    </p>
+
+</main>
+
+<script>
+/* ── State ───────────────────────────────────────────────────────────────── */
+let activeFile       = null;
+let reqCounter       = 0;       // incremented on each new top-level search; prevents stale results
+let currentQuery     = "";
+let currentPage      = 1;
+let totalLoaded      = 0;
+let loadedUrls       = new Set();
+
+/* ── DOM helpers ─────────────────────────────────────────────────────────── */
+const $   = id => document.getElementById(id);
+const show = (el, cls = null) => { if (cls) el.classList.add(cls); else el.style.display = 'block'; };
+const hide = (el, cls = null) => { if (cls) el.classList.remove(cls); else el.style.display = 'none'; };
+const vis  = (el, on) => on ? el.classList.add('visible') : el.classList.remove('visible');
+
+/* ── File picker ─────────────────────────────────────────────────────────── */
+function triggerFileSelect() {
+    $('file-input').click();
+}
+
+$('file-input').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    if (!file) return;                          // cancel → ignore
+    if (!file.type.startsWith('image/')) {
+        setError('Selected file is not an image. Please choose a JPG or PNG.');
+        return;
+    }
+    activeFile = file;
+    showPreview(file);
+    classifyImage(file);
+});
+
+function showPreview(file) {
+    $('preview-name').textContent = file.name;
+    $('preview-size').textContent = `${(file.size / 1024).toFixed(1)} KB`;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        $('preview-thumb').src = ev.target.result;
+        vis($('img-preview-wrap'), true);
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearImage() {
+    activeFile = null;
+    $('file-input').value = '';
+    vis($('img-preview-wrap'), false);
+    vis($('detected-wrap'), false);
+    clearError();
+}
+
+/* ── Error / spinner helpers ─────────────────────────────────────────────── */
+function setError(msg) {
+    const el = $('error-box');
+    el.textContent = msg;
+    vis(el, true);
+    vis($('spinner'), false);
+}
+
+function clearError() {
+    const el = $('error-box');
+    el.textContent = '';
+    vis(el, false);
+}
+
+function setSpinner(text) {
+    $('spinner-text').textContent = text;
+    vis($('spinner'), true);
+}
+
+function hideSpinner() {
+    vis($('spinner'), false);
+}
+
+/* ── Image classification ────────────────────────────────────────────────── */
+async function classifyImage(file) {
+    clearError();
+    const myReq = ++reqCounter;
+
+    vis($('detected-wrap'), false);
+    vis($('results-hdr'), false);
+    $('grid').innerHTML = '';
+    vis($('load-more-wrap'), false);
+    $('empty').style.display = 'none';
+
+    setSpinner('Analyzing vehicle image with Vision AI…');
+
+    const fd = new FormData();
+    fd.append('image', file);
+
+    try {
+        const resp = await fetch('/api/classify', { method: 'POST', body: fd });
+        if (myReq !== reqCounter) return;       // superseded
+
+        const data = await resp.json();
+
+        if (resp.ok && data.success && data.label) {
+            const label = data.label;
+            const conf  = data.confidence ? ` (${data.confidence}%)` : '';
+
+            $('detected-label').textContent = label;
+            $('detected-conf').textContent  = conf;
+            vis($('detected-wrap'), true);
+
+            // Alternative suggestions
+            const altsEl = $('detected-alts');
+            altsEl.innerHTML = '';
+            if (data.alternatives && data.alternatives.length > 0) {
+                const intro = document.createElement('span');
+                intro.style.cssText = 'color:#64748b;font-size:.72rem;margin-right:4px;';
+                intro.textContent = 'Also possible:';
+                altsEl.appendChild(intro);
+                data.alternatives.forEach(alt => {
+                    const pill = document.createElement('button');
+                    pill.className = 'alt-pill';
+                    pill.type = 'button';
+                    pill.textContent = `${alt.label} (${alt.confidence}%)`;
+                    pill.addEventListener('click', () => {
+                        $('search-input').value = alt.label;
+                        initiateSearch(alt.label);
+                    });
+                    altsEl.appendChild(pill);
+                });
             }
 
-            activeImageFile = file;
-            showImagePreview(file);
-            processUploadedImage(file);
+            $('search-input').value = label;
+            initiateSearch(label, myReq);
+            return;
+        }
+
+        // 503 = model loading
+        if (resp.status === 503 && data.retry) {
+            setError(`⏳ ${data.error} — you can also type a search above.`);
+            return;
+        }
+
+        // Classification not confident
+        hideSpinner();
+        setError(`⚠️ ${data.error || 'Could not identify vehicle. Try a clearer exterior photo or type a search.'}`);
+
+    } catch (err) {
+        if (myReq !== reqCounter) return;
+        hideSpinner();
+        setError('⚠️ Vision API unreachable. Please type your search query above.');
+    }
+}
+
+/* ── Text search entry point ─────────────────────────────────────────────── */
+function initiateSearch(queryText, inheritedReq = null) {
+    const query = (queryText !== undefined && queryText !== null
+        ? queryText
+        : $('search-input').value
+    ).trim();
+
+    if (!query) {
+        $('empty').style.display = 'block';
+        return;
+    }
+
+    currentQuery  = query;
+    currentPage   = 1;
+    totalLoaded   = 0;
+    loadedUrls    = new Set();
+    $('grid').innerHTML = '';
+
+    const myReq = inheritedReq !== null ? inheritedReq : ++reqCounter;
+    fetchResults(query, 1, false, myReq);
+}
+
+function loadMore() {
+    if (!currentQuery) return;
+    currentPage++;
+    const myReq = ++reqCounter;
+    fetchResults(currentQuery, currentPage, true, myReq);
+}
+
+/* ── Core fetch ──────────────────────────────────────────────────────────── */
+async function fetchResults(query, page, append, myReq) {
+    clearError();
+    const grid        = $('grid');
+    const hdr         = $('results-hdr');
+    const loadWrap    = $('load-more-wrap');
+    const empty       = $('empty');
+
+    if (!append) {
+        setSpinner('Searching live market listings…');
+        vis(hdr, false);
+        vis(loadWrap, false);
+        empty.style.display = 'none';
+    } else {
+        $('load-more-btn').textContent = '⚡ Loading…';
+    }
+
+    try {
+        const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}&page=${page}`);
+        if (!append && myReq !== reqCounter) return;    // superseded
+
+        const data = await resp.json();
+
+        hideSpinner();
+        $('load-more-btn').textContent = 'Load More Vehicles 🚗';
+
+        if (!data.results || data.results.length === 0) {
+            if (!append) {
+                vis(hdr, false);
+                grid.innerHTML = '';
+                vis(loadWrap, false);
+                empty.textContent = `No listings found for "${query}". Try a different make or model.`;
+                empty.style.display = 'block';
+            } else {
+                vis(loadWrap, false);
+            }
+            return;
+        }
+
+        // Deduplicate
+        const fresh = data.results.filter(r => {
+            const key = r.item_url || r.name;
+            if (loadedUrls.has(key)) return false;
+            loadedUrls.add(key);
+            return true;
         });
 
-        function showImagePreview(file) {
-            const previewBox = document.getElementById('image-preview-container');
-            const previewImg = document.getElementById('preview-img');
-            const filenameEl = document.getElementById('preview-filename');
-            const filesizeEl = document.getElementById('preview-filesize');
+        totalLoaded += fresh.length;
 
-            filenameEl.textContent = file.name;
-            filesizeEl.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+        hdr.textContent = `🎯 Live results for "${data.query || query}" — ${totalLoaded} vehicle${totalLoaded !== 1 ? 's' : ''} loaded`;
+        vis(hdr, true);
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                previewImg.src = e.target.result;
-                previewBox.style.display = 'flex';
-            };
-            reader.readAsDataURL(file);
+        fresh.forEach(r => grid.appendChild(buildCard(r)));
+
+        vis(loadWrap, data.has_more && fresh.length > 0);
+
+    } catch (err) {
+        if (!append && myReq !== reqCounter) return;
+        hideSpinner();
+        $('load-more-btn').textContent = 'Load More Vehicles 🚗';
+        setError('⚠️ Failed to load results. Please check your connection and try again.');
+    }
+}
+
+/* ── Card builder ────────────────────────────────────────────────────────── */
+function buildCard(r) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.setAttribute('role', 'listitem');
+
+    // ── Gallery ──────────────────────────────────────────────────────────────
+    const photos = [];
+    if (r.image_url) photos.push(r.image_url);
+    // Future: if API returns image_urls[] add them here
+    // if (r.image_urls) photos.push(...r.image_urls.slice(0, 3));
+
+    card.appendChild(buildGallery(photos, r.name, r.item_url));
+
+    // ── Deal badge ───────────────────────────────────────────────────────────
+    let badgeHtml = '';
+    if (r.deal_label) {
+        if (r.deal_label.includes('Great Deal'))       badgeHtml = '<span class="badge badge-great">🟢 Great Deal</span>';
+        else if (r.deal_label.includes('Overpriced'))  badgeHtml = '<span class="badge badge-over">🔴 Overpriced</span>';
+        else if (r.deal_label.includes('Fair Market')) badgeHtml = '<span class="badge badge-fair">⚖️ Fair Price</span>';
+    }
+
+    // ── Mileage ──────────────────────────────────────────────────────────────
+    let mileageText = '—';
+    if (r.mileage === 0)              mileageText = '0 km';
+    else if (r.mileage > 0)          mileageText = `${Number(r.mileage).toLocaleString()} km`;
+
+    // ── Price ─────────────────────────────────────────────────────────────────
+    const priceText = (r.price && r.price > 0)
+        ? `<span class="price-val">${Number(r.price).toLocaleString()} EGP</span>`
+        : `<span class="price-val missing">Not listed</span>`;
+
+    // ── Estimate ──────────────────────────────────────────────────────────────
+    const estLabel = r.valuation_source === 'CatBoost' ? 'AI Estimate (CatBoost)' : 'Est. (rule-based)';
+    const estHtml = (r.predicted_fair_price && r.predicted_fair_price > 0)
+        ? `<span class="est-val">${Number(r.predicted_fair_price).toLocaleString()} EGP</span>`
+        : `<span class="est-val na">Not assessed</span>`;
+
+    // ── Match score ───────────────────────────────────────────────────────────
+    const matchHtml = (r.match_score !== null && r.match_score !== undefined)
+        ? `<span>⚡ ${r.match_score}%</span>`
+        : '';
+
+    // ── View button ───────────────────────────────────────────────────────────
+    const btnHtml = r.has_valid_url && r.item_url
+        ? `<a href="${r.item_url}" target="_blank" rel="noopener noreferrer" class="view-btn">View Full Listing ↗</a>`
+        : `<span class="view-btn disabled" aria-disabled="true">Listing unavailable</span>`;
+
+    card.innerHTML += `
+        <div class="card-body">
+            <div class="card-title-row">
+                <h2 class="card-title">${escHtml(r.name)}</h2>
+                ${badgeHtml}
+            </div>
+            <div class="specs">
+                ${r.year ? `<span>📅 ${r.year}</span>` : ''}
+                <span>⚙️ ${escHtml(r.transmission)}</span>
+                <span>🛣️ ${mileageText}</span>
+                <span>📍 ${escHtml(r.location)}</span>
+                ${matchHtml}
+            </div>
+            <div class="price-area">
+                <div>
+                    <span class="price-label">Listed Price</span>
+                    ${priceText}
+                </div>
+                <div style="text-align:right">
+                    <span class="price-label">${estLabel}</span>
+                    ${estHtml}
+                </div>
+            </div>
+            ${btnHtml}
+        </div>
+    `;
+
+    return card;
+}
+
+/* ── Gallery builder ─────────────────────────────────────────────────────── */
+function buildGallery(photos, name, listingUrl) {
+    const wrap = document.createElement('div');
+    wrap.className = 'gallery';
+
+    if (!photos.length) {
+        wrap.innerHTML = `
+            <div class="no-photo">
+                <svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M4 16l4-4 4 4 4-6 4 6M3 20h18V4H3v16z"/>
+                </svg>
+                Photo unavailable
+            </div>`;
+        return wrap;
+    }
+
+    // Build slides (max 3 real photos)
+    const realSlides = photos.slice(0, 3);
+    const hasMore    = listingUrl; // show "view full listing" panel after real slides
+
+    const track = document.createElement('div');
+    track.className = 'gallery-track';
+
+    realSlides.forEach((src, i) => {
+        const slide = document.createElement('div');
+        slide.className = 'gallery-slide';
+        const img = document.createElement('img');
+        img.className = 'gallery-img';
+        img.alt = `${name} photo ${i + 1}`;
+        img.loading = 'lazy';
+        img.src = src;
+        img.onerror = () => {
+            slide.innerHTML = `<div class="no-photo"><svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4-4 4 4 4-6 4 6M3 20h18V4H3v16z"/></svg>Photo unavailable</div>`;
+        };
+        slide.appendChild(img);
+        track.appendChild(slide);
+    });
+
+    // "View full listing" blurred panel
+    if (hasMore) {
+        const moreSlide = document.createElement('div');
+        moreSlide.className = 'gallery-more-slide';
+        if (realSlides.length > 0) {
+            // Blurred last photo as background
+            const bgImg = document.createElement('img');
+            bgImg.className = 'gallery-img';
+            bgImg.style.cssText = 'position:absolute;inset:0;filter:blur(8px);transform:scale(1.08);object-fit:cover;width:100%;height:100%;';
+            bgImg.src = realSlides[realSlides.length - 1];
+            bgImg.alt = '';
+            bgImg.setAttribute('aria-hidden', 'true');
+            moreSlide.appendChild(bgImg);
+        }
+        moreSlide.innerHTML += `
+            <div class="gallery-more-label">
+                🖼️ More photos available
+                <small>View full listing ↗</small>
+            </div>`;
+        if (listingUrl) {
+            moreSlide.addEventListener('click', () => window.open(listingUrl, '_blank', 'noopener,noreferrer'));
+        }
+        track.appendChild(moreSlide);
+    }
+
+    wrap.appendChild(track);
+
+    const totalSlides = realSlides.length + (hasMore ? 1 : 0);
+
+    // Arrows (only if >1 slide)
+    if (totalSlides > 1) {
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'gallery-arrow prev';
+        prevBtn.type = 'button';
+        prevBtn.setAttribute('aria-label', 'Previous photo');
+        prevBtn.textContent = '‹';
+        prevBtn.hidden = true;
+        wrap.appendChild(prevBtn);
+
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'gallery-arrow next';
+        nextBtn.type = 'button';
+        nextBtn.setAttribute('aria-label', 'Next photo');
+        nextBtn.textContent = '›';
+        wrap.appendChild(nextBtn);
+
+        // Dots
+        const dotsEl = document.createElement('div');
+        dotsEl.className = 'gallery-dots';
+        const dots = [];
+        for (let i = 0; i < totalSlides; i++) {
+            const d = document.createElement('div');
+            d.className = 'gallery-dot' + (i === 0 ? ' active' : '');
+            dotsEl.appendChild(d);
+            dots.push(d);
+        }
+        wrap.appendChild(dotsEl);
+
+        let cur = 0;
+
+        function goTo(idx) {
+            cur = Math.max(0, Math.min(idx, totalSlides - 1));
+            track.style.transform = `translateX(-${cur * 100}%)`;
+            dots.forEach((d, i) => d.classList.toggle('active', i === cur));
+            prevBtn.hidden = cur === 0;
+            nextBtn.hidden = cur === totalSlides - 1;
         }
 
-        function clearSelectedImage() {
-            activeImageFile = null;
-            document.getElementById('image-input').value = '';
-            document.getElementById('image-preview-container').style.display = 'none';
-            document.getElementById('detected-badge-box').style.display = 'none';
-            hideError();
-        }
+        prevBtn.addEventListener('click', e => { e.stopPropagation(); goTo(cur - 1); });
+        nextBtn.addEventListener('click', e => { e.stopPropagation(); goTo(cur + 1); });
 
-        function showError(msg) {
-            const errBox = document.getElementById('error-box');
-            errBox.textContent = msg;
-            errBox.style.display = 'block';
-            document.getElementById('loading-spinner').style.display = 'none';
-        }
+        // Touch swipe
+        let touchStartX = null;
+        wrap.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+        wrap.addEventListener('touchend', e => {
+            if (touchStartX === null) return;
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            if (Math.abs(dx) > 32) goTo(dx < 0 ? cur + 1 : cur - 1);
+            touchStartX = null;
+        }, { passive: true });
 
-        function hideError() {
-            const errBox = document.getElementById('error-box');
-            errBox.style.display = 'none';
-            errBox.textContent = '';
-        }
+        goTo(0);
+    }
 
-        async function processUploadedImage(file) {
-            hideError();
-            const currentReqId = ++activeRequestId;
-            const spinner = document.getElementById("loading-spinner");
-            const header = document.getElementById("results-header");
-            const grid = document.getElementById("results-grid");
-            const emptyState = document.getElementById("empty-state");
-            const badgeBox = document.getElementById("detected-badge-box");
-            const badge = document.getElementById("detected-badge");
-            const loadMoreWrap = document.getElementById("load-more-wrap");
+    return wrap;
+}
 
-            spinner.innerHTML = "⚡ Analyzing vehicle image with Vision AI...";
-            spinner.style.display = "block";
-            header.style.display = "none";
-            grid.innerHTML = "";
-            emptyState.style.display = "none";
-            badgeBox.style.display = "none";
-            loadMoreWrap.style.display = "none";
-
-            const formData = new FormData();
-            formData.append("image", file);
-
-            try {
-                const response = await fetch('/api/classify', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-
-                if (currentReqId !== activeRequestId) return;
-
-                if (response.ok && data.success && data.label) {
-                    const detectedLabel = data.label;
-                    const confidence = data.confidence ? ` (${data.confidence}%)` : '';
-                    badge.innerHTML = `📷 Detected Vehicle: <strong>${detectedLabel}</strong>${confidence}`;
-                    badgeBox.style.display = "block";
-
-                    document.getElementById("search-input").value = detectedLabel;
-                    initiateNewSearch(detectedLabel);
-                    return;
-                }
-            } catch (err) {
-                console.warn("Server API image classification error:", err);
-            }
-
-            // Client-side Browser AI Vision Fallback
-            if (window.mobilenet) {
-                try {
-                    const imgEl = document.getElementById("preview-img");
-                    if (imgEl && imgEl.src) {
-                        spinner.innerHTML = "⚡ Running Browser AI Vision model...";
-                        const model = await mobilenet.load();
-                        const predictions = await model.classify(imgEl);
-                        if (currentReqId !== activeRequestId) return;
-
-                        if (predictions && predictions.length > 0) {
-                            const topLabel = predictions[0].className.split(',')[0].trim();
-                            const conf = Math.round(predictions[0].probability * 100);
-                            const cleanLabel = topLabel.replace(/(sports car|sport car|convertible|coupe|minivan|pickup|limousine|beach wagon|racer|car)/gi, function(m){ return m.toUpperCase(); });
-                            
-                            badge.innerHTML = `📷 Identified Vehicle (AI Vision): <strong>${cleanLabel}</strong> (${conf}%)`;
-                            badgeBox.style.display = "block";
-
-                            document.getElementById("search-input").value = cleanLabel;
-                            initiateNewSearch(cleanLabel);
-                            return;
-                        }
-                    }
-                } catch (clientErr) {
-                    console.warn("Client MobileNet fallback error:", clientErr);
-                }
-            }
-
-            if (currentReqId === activeRequestId) {
-                showError("⚠️ Unable to identify vehicle model in uploaded photo. Try a clear exterior car image or search by text above.");
-            }
-        }
-
-        function initiateNewSearch(queryText = null) {
-            const input = document.getElementById("search-input");
-            const query = (queryText !== null ? queryText : input.value).trim();
-            currentSearchQuery = query;
-            currentPage = 1;
-            loadedCount = 0;
-            document.getElementById("results-grid").innerHTML = "";
-            fetchVehicles(query, 1, false);
-        }
-
-        function loadNextPage() {
-            if (!currentSearchQuery) return;
-            currentPage++;
-            fetchVehicles(currentSearchQuery, currentPage, true);
-        }
-
-        async function fetchVehicles(query, page = 1, append = false) {
-            hideError();
-            const spinner = document.getElementById("loading-spinner");
-            const header = document.getElementById("results-header");
-            const grid = document.getElementById("results-grid");
-            const emptyState = document.getElementById("empty-state");
-            const loadMoreWrap = document.getElementById("load-more-wrap");
-
-            if (!query) {
-                spinner.style.display = "none";
-                header.style.display = "none";
-                grid.innerHTML = "";
-                loadMoreWrap.style.display = "none";
-                emptyState.style.display = "block";
-                emptyState.innerHTML = "Please enter a vehicle make or model to search (e.g. <em>Toyota Corolla</em>, <em>Kia Sportage</em>, <em>Mercedes C180</em>), or upload a car photo 📷";
-                return;
-            }
-
-            const currentReqId = ++activeRequestId;
-
-            if (!append) {
-                spinner.innerHTML = "⚡ Searching market & running CatBoost valuation...";
-                spinner.style.display = "block";
-                header.style.display = "none";
-                loadMoreWrap.style.display = "none";
-                emptyState.style.display = "none";
-            } else {
-                document.getElementById("load-more-btn").textContent = "⚡ Loading more vehicles...";
-            }
-
-            try {
-                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&page=${page}`);
-                const data = await response.json();
-
-                if (currentReqId !== activeRequestId && !append) return;
-
-                spinner.style.display = "none";
-                document.getElementById("load-more-btn").textContent = "Load More Vehicles 🚗";
-
-                if (!data.results || data.results.length === 0) {
-                    if (!append) {
-                        header.style.display = "none";
-                        grid.innerHTML = "";
-                        loadMoreWrap.style.display = "none";
-                        emptyState.style.display = "block";
-                        emptyState.innerHTML = `No matching vehicle listings found for "${query}". Try searching by make or model.`;
-                    } else {
-                        loadMoreWrap.style.display = "none";
-                    }
-                    return;
-                }
-
-                loadedCount += data.results.length;
-                header.textContent = `🎯 Live Market Results for: "${data.query || query}" (${loadedCount} vehicles loaded)`;
-                header.style.display = "block";
-
-                data.results.forEach(r => {
-                    let badgeHtml = "";
-                    if (r.deal_label && r.deal_label !== "Not assessed") {
-                        if (r.deal_label.includes("Great Deal")) {
-                            badgeHtml = '<span class="deal-badge-great">🟢 Great Deal</span>';
-                        } else if (r.deal_label.includes("Overpriced")) {
-                            badgeHtml = '<span class="deal-badge-overpriced">🔴 Overpriced</span>';
-                        } else {
-                            badgeHtml = '<span class="deal-badge-fair">🟡 Fair Price</span>';
-                        }
-                    } else {
-                        badgeHtml = '<span class="deal-badge-none">⚪ Not assessed</span>';
-                    }
-
-                    let mileageText = "Not provided";
-                    if (r.mileage === 0) {
-                        mileageText = "0 km";
-                    } else if (r.mileage && r.mileage > 0) {
-                        mileageText = `${Number(r.mileage).toLocaleString()} km`;
-                    }
-
-                    let priceText = "Price on request";
-                    if (r.price && r.price > 0) {
-                        priceText = `${Number(r.price).toLocaleString()} EGP`;
-                    }
-
-                    let fairPriceText = '<span class="unassessed-text">Not assessed</span>';
-                    if (r.predicted_fair_price && r.predicted_fair_price > 0) {
-                        fairPriceText = `<strong class="fair-item-val">${Number(r.predicted_fair_price).toLocaleString()} EGP</strong>`;
-                    }
-
-                    let matchHtml = "";
-                    if (r.match_score !== null && r.match_score !== undefined) {
-                        matchHtml = `<span>⚡ Match: ${r.match_score}%</span>`;
-                    }
-
-                    let imgHtml = "";
-                    if (r.image_url) {
-                        imgHtml = `<img src="${r.image_url}" alt="${r.name}" class="card-img" loading="lazy" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=card-img-placeholder><svg width=40 height=40 fill=none stroke=currentColor viewBox=\\'0 0 24 24\\'><path stroke-linecap=round stroke-linejoin=round stroke-width=1.5 d=\\'M8 17a2 2 0 100 4 2 2 0 000-4ptm8 0a2 2 0 100 4 2 2 0 000-4ptm-11 0h6m-13-5l2-6h10l2 6m-14 0h16v3H3v-3z\\'/></svg><span style=\\'font-size:0.7rem; margin-top:4px;\\'>Photo Unavailable</span></div>';">`;
-                    } else {
-                        imgHtml = `<div class="card-img-placeholder"><svg width="40" height="40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 17a2 2 0 100 4 2 2 0 000-4ptm8 0a2 2 0 100 4 2 2 0 000-4ptm-11 0h6m-13-5l2-6h10l2 6m-14 0h16v3H3v-3z"/></svg><span style="font-size:0.7rem; margin-top:4px;">Photo Unavailable</span></div>`;
-                    }
-
-                    const card = document.createElement("div");
-                    card.className = "car-card";
-                    card.innerHTML = `
-                        <div class="card-img-wrap">
-                            ${imgHtml}
-                        </div>
-                        <div class="card-body">
-                            <div class="card-title-row">
-                                <h3 class="card-title">${r.name}</h3>
-                                <div>${badgeHtml}</div>
-                            </div>
-                            <div class="card-specs">
-                                <span>⚙️ ${r.transmission}</span>
-                                <span>🛣️ ${mileageText}</span>
-                                <span>📍 ${r.location}</span>
-                                ${matchHtml}
-                            </div>
-                            <div class="card-price-area">
-                                <div>
-                                    <span class="price-item-label">Listed Price:</span>
-                                    <span class="price-item-val">${priceText}</span>
-                                </div>
-                                <div style="text-align: right;">
-                                    <span class="price-item-label">Fair Price (CatBoost):</span>
-                                    ${fairPriceText}
-                                </div>
-                            </div>
-                            <div class="card-footer">
-                                <a href="${r.item_url}" target="_blank" rel="noopener noreferrer" class="view-btn">View Listing ↗</a>
-                            </div>
-                        </div>
-                    `;
-                    grid.appendChild(card);
-                });
-
-                if (data.has_more) {
-                    loadMoreWrap.style.display = "block";
-                } else {
-                    loadMoreWrap.style.display = "none";
-                }
-            } catch (err) {
-                if (currentReqId !== activeRequestId && !append) return;
-                spinner.style.display = "none";
-                showError("⚠️ Failed to load search results. Please try again.");
-            }
-        }
-    </script>
+/* ── Utility ─────────────────────────────────────────────────────────────── */
+function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
+}
+</script>
 </body>
 </html>

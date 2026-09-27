@@ -274,78 +274,45 @@ html, body, [data-testid="stAppViewContainer"] {{
     border-radius: 20px;
     font-size: .85rem;
 }}
-.deal-badge-none {{
-    background: rgba(255,255,255,.06);
-    border: 1px solid rgba(255,255,255,.15);
-    color: #94a3b8;
-    font-weight: 600;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: .85rem;
-}}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="background-car"></div>', unsafe_allow_html=True)
 
+DEVICE = "cuda" if (HAS_TORCH and torch and torch.cuda.is_available()) else "cpu"
 VISION_MODEL = "dima806/car_models_image_detection"
 
 @st.cache_resource(show_spinner=False)
 def load_components():
     proc, mod, val = None, None, None
-    vision_err = None
     if HAS_TORCH:
         try:
-            device_target = "cuda" if (torch.cuda.is_available() and torch.cuda.device_count() > 0) else "cpu"
             proc = AutoImageProcessor.from_pretrained(VISION_MODEL)
-            mod = AutoModelForImageClassification.from_pretrained(VISION_MODEL).to(device_target)
+            mod = AutoModelForImageClassification.from_pretrained(VISION_MODEL).to(DEVICE)
             mod.eval()
-        except Exception as e:
-            print("Vision Model Load Error:", e)
-            vision_err = str(e)
+        except Exception:
             proc, mod = None, None
-    else:
-        vision_err = "PyTorch or Transformers library is not installed."
-        
-    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apex_catboost_valuation.joblib")
-    if not os.path.exists(model_path):
-        model_path = "apex_catboost_valuation.joblib"
-
-    if os.path.exists(model_path):
+    if os.path.exists("apex_catboost_valuation.joblib"):
         try:
-            val = joblib.load(model_path)
-        except Exception as e:
-            print("Valuation Model Load Error:", e)
+            val = joblib.load("apex_catboost_valuation.joblib")
+        except Exception:
             val = None
-    return proc, mod, val, vision_err
+    return proc, mod, val
 
-img_processor, car_vision_model, full_pricing_pipeline, vision_init_error = load_components()
+img_processor, car_vision_model, full_pricing_pipeline = load_components()
 
 def classify_car(img):
-    if not HAS_TORCH:
-        return "", "PyTorch or Transformers package is missing in Python environment."
-    if img_processor is None or car_vision_model is None:
-        err_detail = vision_init_error if vision_init_error else "Vision AI model failed to initialize."
-        return "", err_detail
-    if img is None:
-        return "", "No valid image uploaded."
-    try:
-        image = img.convert("RGB")
-        device = next(car_vision_model.parameters()).device
-        inputs = img_processor(images=image, return_tensors="pt").to(device)
-        with torch.inference_mode():
-            outputs = car_vision_model(**inputs)
-            logits = outputs.logits
-            idx = torch.argmax(logits, dim=-1).item()
-        
-        id2label = getattr(car_vision_model.config, "id2label", None)
-        if id2label and idx in id2label:
-            lbl = str(id2label[idx]).replace("_", " ")
-            return lbl.title(), None
-        else:
-            return "", f"Predicted index {idx} not found in model id2label configuration."
-    except Exception as e:
-        return "", f"Vision AI inference failed: {str(e)}"
+    if HAS_TORCH and img_processor is not None and car_vision_model is not None:
+        try:
+            inputs = img_processor(images=img.convert("RGB"), return_tensors="pt").to(DEVICE)
+            with torch.inference_mode():
+                logits = car_vision_model(**inputs).logits
+                idx = torch.argmax(logits, dim=-1).item()
+            lbl = car_vision_model.config.id2label[idx].replace("_", " ")
+            return lbl.title()
+        except Exception:
+            pass
+    return ""
 
 DETAIL_URL_PATTERN = re.compile(r'/(?:car|new-car)/[^\?#]*?\d{5,}$', re.IGNORECASE)
 ARABIC_TO_ENGLISH_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
@@ -361,102 +328,9 @@ def is_valid_vehicle_url(url: str) -> bool:
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
         return False
-    domain = parsed.netloc.lower()
-    if "hatla2ee.com" not in domain:
+    if "hatla2ee.com" not in parsed.netloc.lower():
         return False
-    path = parsed.path.lower()
-    if "teraz/" in path:
-        return False
-    return bool(DETAIL_URL_PATTERN.search(parsed.path))
-
-BRANDS_DICT = {
-    "kia": "kia", "كيا": "kia",
-    "mercedes": "mercedes", "مرسيدس": "mercedes", "مرسيدس-بنز": "mercedes", "mercedes-benz": "mercedes",
-    "hyundai": "hyundai", "هيونداي": "hyundai", "هيوانداي": "hyundai",
-    "toyota": "toyota", "تويوتا": "toyota",
-    "bmw": "bmw", "بي ام": "bmw", "بي إم": "bmw", "بي ام دبليو": "bmw", "بي إم دبليو": "bmw",
-    "nissan": "nissan", "نيسان": "nissan",
-    "audi": "audi", "أودي": "audi", "اودي": "audi",
-    "mitsubishi": "mitsubishi", "ميتسوبيشي": "mitsubishi",
-    "chevrolet": "chevrolet", "شيفروليه": "chevrolet", "شفروليه": "chevrolet",
-    "renault": "renault", "رينو": "renault",
-    "peugeot": "peugeot", "بيجو": "peugeot",
-    "mg": "mg", "ام جي": "mg", "إم جي": "mg",
-    "chery": "chery", "شيري": "chery",
-    "skoda": "skoda", "سكودا": "skoda",
-    "volkswagen": "volkswagen", "فولكس": "volkswagen", "فولكس فاجن": "volkswagen", "vw": "volkswagen",
-    "fiat": "fiat", "فيات": "fiat",
-    "seat": "seat", "سيات": "seat",
-    "ford": "ford", "فورد": "ford",
-    "suzuki": "suzuki", "سوزوكي": "suzuki",
-    "opel": "opel", "أوبل": "opel", "اوبل": "opel",
-    "jeep": "jeep", "جيب": "jeep",
-    "byd": "byd", "بي واي دي": "byd",
-    "honda": "honda", "هوندا": "honda",
-    "mazda": "mazda", "مازدا": "mazda",
-    "subaru": "subaru", "سوبارو": "subaru",
-    "citroen": "citroen", "ستروين": "citroen", "سيتروين": "citroen",
-    "haval": "haval", "هافال": "haval",
-    "changan": "changan", "شانجان": "changan",
-    "geely": "geely", "جيلي": "geely"
-}
-
-MODELS_DICT = {
-    "sportage": "sportage", "سبورتاج": "sportage",
-    "corolla": "corolla", "كورولا": "corolla",
-    "tucson": "tucson", "توسان": "tucson",
-    "c180": "c180", "c-class": "c180", "c 180": "c180", "cla": "cla", "e200": "e200", "e250": "e250",
-    "sunny": "sunny", "صني": "sunny",
-    "cerato": "cerato", "سيراتو": "cerato", "k3": "cerato",
-    "elantra": "elantra", "النترا": "elantra", "إلنترا": "elantra", "hd": "elantra", "cn7": "elantra", "ad": "elantra",
-    "accent": "accent", "اكسنت": "accent", "أكسنت": "accent", "rb": "accent",
-    "pegas": "pegas", "بيجاس": "pegas",
-    "yaris": "yaris", "ياريس": "yaris", "يارس": "yaris",
-    "fortuner": "fortuner", "فورتشنر": "fortuner",
-    "octavia": "octavia", "أوكتافيا": "octavia", "اوكتافيا": "octavia",
-    "passat": "passat", "باست": "passat", "باسات": "passat",
-    "golf": "golf", "جولف": "golf",
-    "tiguan": "tiguan", "تيجوان": "tiguan",
-    "megane": "megane", "ميجان": "megane",
-    "logan": "logan", "لوجان": "logan",
-    "duster": "duster", "داستر": "duster",
-    "sentra": "sentra", "سينترا": "sentra", "سنترا": "sentra",
-    "qashqai": "qashqai", "قشقاي": "qashqai",
-    "lancer": "lancer", "لانسر": "lancer",
-    "optra": "optra", "أوبترا": "optra", "اوبترا": "optra",
-    "aveo": "aveo", "أفيو": "aveo", "افيو": "aveo",
-    "cruze": "cruze", "كروز": "cruze",
-    "301": "301", "3008": "3008", "2008": "2008", "5008": "5008",
-    "zs": "zs", "mg6": "mg6", "mg5": "mg5", "rx5": "rx5",
-    "arrizo": "arrizo", "أريزو": "arrizo", "اريزو": "arrizo", "tiggo": "tiggo", "تيجو": "tiggo"
-}
-
-def extract_brand_and_model(query: str):
-    if not query:
-        return "", ""
-    q = query.lower().strip()
-    detected_brand = None
-    detected_model = None
-
-    for k, v in BRANDS_DICT.items():
-        if re.search(r'\b' + re.escape(k) + r'\b', q, re.IGNORECASE) or k in q:
-            detected_brand = v
-            break
-
-    for k, v in MODELS_DICT.items():
-        if re.search(r'\b' + re.escape(k) + r'\b', q, re.IGNORECASE) or k in q:
-            detected_model = v
-            break
-
-    words = [w for w in re.findall(r'[a-zA-Z0-9\u0600-\u06FF]+', q) if not w.isdigit()]
-    if not detected_brand and words:
-        detected_brand = words[0].lower()
-    
-    if not detected_model and len(words) > 1:
-        if words[0].lower() == detected_brand and len(words) >= 2:
-            detected_model = words[1].lower()
-
-    return detected_brand or "", detected_model or ""
+    return bool(DETAIL_URL_PATTERN.search(parsed.path)) and "teraz/" not in parsed.path.lower()
 
 class DualPlatformMarketScraper:
     def __init__(self):
@@ -475,7 +349,7 @@ class DualPlatformMarketScraper:
 
         clean_b = brand.lower().strip()
         clean_m = model.lower().strip() if model else ""
-
+        
         target_url = f"{self.base_url}/ar/car/{clean_b}"
         if clean_m:
             target_url += f"/{clean_m.replace(' ', '-')}"
@@ -575,12 +449,12 @@ class DualPlatformMarketScraper:
                             "brand": brand.title(),
                             "model": model.title() if model else "Model",
                             "price": price,
-                            "year": year,
+                            "year": year if year else 2024,
                             "mileage": mileage,
                             "location": location,
                             "transmission": transmission,
                             "fuel_type": fuel_type,
-                            "car_condition": "New" if (mileage == 0) else "Used",
+                            "car_condition": "New" if mileage == 0 else "Used",
                             "condition_tag": condition_tag,
                             "trim_tier": "Topline",
                             "source": "Hatla2ee Market",
@@ -608,17 +482,16 @@ def calculate_match_score(query: str, item_name: str, brand: str, model: str, ye
         return 0.0
     overlap = len(q_tokens.intersection(t_tokens))
     score = (overlap / len(q_tokens)) * 100.0
-    if brand and brand.lower() in q_norm:
+    if brand.lower() in q_norm:
         score = max(score, 88.0)
-    if model and model.lower() in q_norm:
+    if model.lower() in q_norm:
         score = max(score, 94.0)
     if year and str(year) in q_norm:
         score = min(score + 4.0, 99.8)
     return round(min(score, 99.8), 1)
 
 def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataFrame:
-    if results_df.empty:
-        return results_df
+    if results_df.empty: return results_df
     results_df = results_df.copy()
 
     predicted_prices = [None] * len(results_df)
@@ -627,30 +500,29 @@ def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataF
         try:
             eval_df = results_df.copy()
             current_year = 2026
-
-            num_cols = getattr(full_pricing_pipeline, 'num_cols', ['year', 'mileage', 'car_age', 'km_per_year'])
-            cat_cols = getattr(full_pricing_pipeline, 'cat_cols', ['brand', 'model', 'location', 'transmission', 'fuel_type', 'car_condition', 'condition_tag', 'trim_tier'])
-            medians = getattr(full_pricing_pipeline, 'medians', {})
-
-            years = pd.to_numeric(eval_df.get('year'), errors='coerce').fillna(medians.get('year', 2016.0))
-            raw_mileages = pd.to_numeric(eval_df.get('mileage'), errors='coerce')
-            mileages = raw_mileages.fillna(medians.get('mileage', 122000.0))
-
-            eval_df['year'] = years
-            eval_df['mileage'] = mileages
+            
+            years = pd.to_numeric(eval_df['year'], errors='coerce').fillna(2024)
+            raw_mileages = pd.to_numeric(eval_df['mileage'], errors='coerce')
+            mileages = raw_mileages.fillna(122000.0)
+            
             eval_df['car_age'] = (current_year - years).clip(lower=0)
             eval_df['km_per_year'] = np.where(eval_df['car_age'] > 0, mileages / eval_df['car_age'].replace(0, 1), mileages)
             eval_df['fuel_type'] = eval_df.get('fuel_type', pd.Series(['Benzine']*len(results_df))).fillna('Benzine')
             eval_df['car_condition'] = np.where(raw_mileages == 0, 'New', 'Used')
             eval_df['condition_tag'] = eval_df.get('condition_tag', pd.Series(['Fabrika']*len(results_df))).fillna('Fabrika')
             eval_df['trim_tier'] = eval_df.get('trim_tier', pd.Series(['Topline']*len(results_df))).fillna('Topline')
+            
+            num_cols = getattr(full_pricing_pipeline, 'num_cols', ['year', 'mileage', 'car_age', 'km_per_year'])
+            cat_cols = getattr(full_pricing_pipeline, 'cat_cols', ['brand', 'model', 'location', 'transmission', 'fuel_type', 'car_condition', 'condition_tag', 'trim_tier'])
+            medians = getattr(full_pricing_pipeline, 'medians', {})
 
             for c in num_cols:
                 eval_df[c] = pd.to_numeric(eval_df.get(c, 0), errors="coerce").fillna(medians.get(c, 0))
-
+                
+            # Title Case categorical features for CatBoost
             for c in cat_cols:
                 eval_df[c] = eval_df.get(c, "Missing").fillna("Missing").astype(str).str.title()
-
+                
             feature_df = eval_df[num_cols + cat_cols]
             pool = Pool(feature_df, cat_features=cat_cols)
             preds_log = full_pricing_pipeline.model.predict(pool)
@@ -658,7 +530,7 @@ def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataF
 
             predicted_prices = []
             for p in preds_egp:
-                if p is not None and not np.isnan(p) and float(p) > 0:
+                if not np.isnan(p) and p > 0:
                     predicted_prices.append(float(np.round(p, 0)))
                 else:
                     predicted_prices.append(None)
@@ -672,12 +544,8 @@ def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataF
     for idx, r in results_df.iterrows():
         p_val = r.get("price")
         f_val = r.get("predicted_fair_price")
-
-        p_valid = (p_val is not None and not pd.isna(p_val) and float(p_val) > 0)
-        f_valid = (f_val is not None and not pd.isna(f_val) and float(f_val) > 0)
-
-        if p_valid and f_valid:
-            pct = (float(p_val) - float(f_val)) / float(f_val)
+        if p_val and f_val:
+            pct = (p_val - f_val) / f_val
             if pct <= -0.05:
                 deal_labels.append("Great Deal 🔥")
             elif pct >= 0.08:
@@ -685,7 +553,7 @@ def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataF
             else:
                 deal_labels.append("Fair Market Price ⚖️")
         else:
-            deal_labels.append(None)
+            deal_labels.append("Fair Market Price ⚖️")
 
     results_df["deal_label"] = deal_labels
 
@@ -696,7 +564,7 @@ def add_valuation_columns(results_df: pd.DataFrame, query: str = "") -> pd.DataF
             item_name=str(r.get("name", "")),
             brand=str(r.get("brand", "")),
             model=str(r.get("model", "")),
-            year=int(r.get("year")) if (r.get("year") is not None and not pd.isna(r.get("year"))) else None
+            year=int(r.get("year")) if r.get("year") else None
         ))
     results_df["match_score"] = scores
     return results_df
@@ -705,17 +573,61 @@ def hybrid_search(user_query: str = "", top_k: int = 6):
     q = user_query.lower().strip()
     if not q:
         return pd.DataFrame()
+        
+    detected_brand = None
+    detected_model = None
+    
+    brands_dict = {
+        "kia": "kia", "كيا": "kia",
+        "mercedes": "mercedes", "مرسيدس": "mercedes", "مرسيدس-بنز": "mercedes",
+        "hyundai": "hyundai", "هيونداي": "hyundai",
+        "toyota": "toyota", "تويوتا": "toyota",
+        "bmw": "bmw", "بي ام": "bmw", "بي إم": "bmw", "بي ام دبليو": "bmw",
+        "nissan": "nissan", "نيسان": "nissan",
+        "audi": "audi", "أودي": "audi",
+        "mitsubishi": "mitsubishi", "ميتسوبيشي": "mitsubishi",
+        "chevrolet": "chevrolet", "شيفروليه": "chevrolet", "شفروليه": "chevrolet",
+        "renault": "renault", "رينو": "renault",
+        "peugeot": "peugeot", "بيجو": "peugeot",
+        "mg": "mg", "ام جي": "mg", "إم جي": "mg",
+        "chery": "chery", "شيري": "chery",
+        "skoda": "skoda", "سكودا": "skoda",
+        "volkswagen": "volkswagen", "فولكس": "volkswagen", "فولكس فاجن": "volkswagen", "vw": "volkswagen",
+        "fiat": "fiat", "فيات": "fiat"
+    }
 
-    detected_brand, detected_model = extract_brand_and_model(user_query)
+    models_dict = {
+        "sportage": "sportage", "سبورتاج": "sportage",
+        "corolla": "corolla", "كورولا": "corolla",
+        "tucson": "tucson", "توسان": "tucson",
+        "c180": "c180", "c-class": "c180", "c 180": "c180", "cla": "cla", "e200": "e200",
+        "sunny": "sunny", "صني": "sunny",
+        "cerato": "cerato", "سيراتو": "cerato",
+        "elantra": "elantra", "النترا": "elantra", "إلنترا": "elantra",
+        "accent": "accent", "اكسنت": "accent",
+        "pegas": "pegas", "بيجاس": "pegas",
+        "yaris": "yaris", "ياريس": "yaris",
+        "fortuner": "fortuner", "فورتشنر": "fortuner"
+    }
+
+    for k, v in brands_dict.items():
+        if k in q:
+            detected_brand = v
+            break
+
+    for k, v in models_dict.items():
+        if k in q:
+            detected_model = v
+            break
+
+    if not detected_brand:
+        words = [w for w in re.findall(r'\w+', q) if not w.isdigit()]
+        detected_brand = words[0] if words else user_query
 
     ads = live_engine.scrape_hatla2ee(detected_brand, detected_model)
     sub_df = pd.DataFrame(ads)
     if not sub_df.empty:
-        if "year" in sub_df.columns:
-            sub_df["year_sort"] = pd.to_numeric(sub_df["year"], errors="coerce").fillna(0)
-            sub_df = sub_df.sort_values("year_sort", ascending=False).drop(columns=["year_sort"]).head(top_k)
-        else:
-            sub_df = sub_df.head(top_k)
+        sub_df = sub_df.sort_values("year", ascending=False).head(top_k)
     return add_valuation_columns(sub_df, query=user_query)
 
 st.markdown("""
@@ -742,29 +654,25 @@ with st.form("search_form", clear_on_submit=False):
         user_query = st.text_input("Search", placeholder="Type your car requirements and press Enter...", label_visibility="collapsed")
     with c_up:
         uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
-
+    
     submitted = st.form_submit_button("Search Market", use_container_width=True)
 
 if submitted or user_query or uploaded_file:
     det_car = ""
     if uploaded_file:
         with st.spinner("Analyzing vehicle image with Vision AI..."):
-            try:
-                im = Image.open(uploaded_file)
-                det_car, vision_err = classify_car(im)
-                if det_car:
-                    st.markdown(f"""
-<div style="text-align: center; margin: 15px 0;">
-    <span style="background: rgba(56, 189, 248, 0.15); border: 1px solid var(--neon-blue); color: #fff; padding: 6px 18px; border-radius: 20px; font-size: 0.9rem;">
-        📷 Detected Vehicle: <strong>{det_car}</strong>
-    </span>
-</div>
-""", unsafe_allow_html=True)
-                else:
-                    reason = vision_err if vision_err else "The uploaded image could not be identified as a vehicle model."
-                    st.warning(f"⚠️ Vision AI Classification Unsuccessful: {reason}. Searching by query instead.")
-            except Exception as e:
-                st.warning(f"⚠️ Could not process image file: {str(e)}. Searching by query instead.")
+            im = Image.open(uploaded_file)
+            det_car = classify_car(im)
+            if det_car:
+                st.markdown(f"""
+                <div style="text-align: center; margin: 15px 0;">
+                    <span style="background: rgba(56, 189, 248, 0.15); border: 1px solid var(--neon-blue); color: #fff; padding: 6px 18px; border-radius: 20px; font-size: 0.9rem;">
+                        📷 Detected Vehicle: <strong>{det_car}</strong>
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.warning("⚠️ The uploaded image could not be identified as a vehicle model. Searching by query instead.")
 
     final_q = f"{det_car} {user_query}".strip()
     df_res = hybrid_search(final_q, top_k=6)
@@ -775,71 +683,72 @@ if submitted or user_query or uploaded_file:
         st.info("No matching vehicle listings found for your search.")
     else:
         for _, r in df_res.iterrows():
-            deal = r.get('deal_label')
-            if deal == "Great Deal 🔥":
+            deal = str(r.get('deal_label', 'Fair Market Price'))
+            if "Great Deal" in deal:
                 badge_html = '<span class="deal-badge-great">🟢 Great Deal</span>'
-            elif deal == "Overpriced ⚠️":
+            elif "Overpriced" in deal:
                 badge_html = '<span class="deal-badge-overpriced">🔴 Overpriced</span>'
-            elif deal == "Fair Market Price ⚖️":
-                badge_html = '<span class="deal-badge-fair">🟡 Fair Price</span>'
             else:
-                badge_html = '<span class="deal-badge-none">Valuation N/A</span>'
+                badge_html = '<span class="deal-badge-fair">🟡 Fair Price</span>'
 
             raw_url = r.get('item_url', None)
             if is_valid_vehicle_url(raw_url):
-                action_btn = f'<a href="{raw_url}" target="_blank" style="display: inline-block; background: rgba(56, 189, 248, 0.15); border: 1px solid var(--neon-blue); color: #fff; padding: 7px 16px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.9rem;">View Listing ↗️</a>'
+                action_btn = f'''
+                <a href="{raw_url}" target="_blank" style="display: inline-block; background: rgba(56, 189, 248, 0.15); border: 1px solid var(--neon-blue); color: #fff; padding: 7px 16px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.9rem;">
+                    View Listing ↗
+                </a>
+                '''
             else:
-                action_btn = '<div style="display: inline-block; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 0.85rem;" title="Direct vehicle detail URL is unavailable for this market record">⚠️ Listing URL Unavailable</div>'
+                action_btn = '''
+                <div style="display: inline-block; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 0.85rem;" title="Direct vehicle detail URL is unavailable for this market record">
+                    ⚠️ Listing URL Unavailable
+                </div>
+                '''
 
             km_val = r.get('mileage')
             if km_val == 0:
                 km_text = "0 km"
-            elif km_val is not None and not pd.isna(km_val) and float(km_val) > 0:
-                km_text = f"{float(km_val):,.0f} km"
+            elif km_val and km_val > 0:
+                km_text = f"{km_val:,.0f} km"
             else:
                 km_text = "Not provided"
 
             price_val = r.get('price')
-            if price_val is not None and not pd.isna(price_val) and float(price_val) > 0:
-                price_text = f"{float(price_val):,.0f} EGP"
-            else:
-                price_text = "Price on request"
+            price_text = f"{price_val:,.0f} EGP" if (price_val and price_val > 0) else "Price on request"
 
             fair_val = r.get('predicted_fair_price')
-            if fair_val is not None and not pd.isna(fair_val) and float(fair_val) > 0:
-                fair_text = f"{float(fair_val):,.0f} EGP"
-            else:
-                fair_text = "N/A"
+            fair_text = f"{fair_val:,.0f} EGP" if (fair_val and fair_val > 0) else "N/A"
 
-            card_html = f'''<div class="car-card" style="max-width:760px; margin-left:auto; margin-right:auto;">
-<div style="display: flex; justify-content: space-between; align-items: center;">
-<span style="font-size: 1.3rem; font-weight: 700; color: #fff;">{r['name']}</span>
-<div>{badge_html}</div>
-</div>
-<div style="display: flex; gap: 15px; margin-top: 8px; color: #94a3b8; font-size: 0.88rem;">
-<span>⚙️ {r['transmission']}</span>
-<span>🛣️ {km_text}</span>
-<span>📍 {r['location']}</span>
-<span>⚡ Match: {r['match_score']}%</span>
-</div>
-<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
-<div>
-<span style="color: #94a3b8; font-size: 0.82rem;">Listed Price:</span><br>
-<strong style="color: #fff; font-size: 1.2rem;">{price_text}</strong>
-</div>
-<div>
-<span style="color: #94a3b8; font-size: 0.82rem;">Fair Price (CatBoost):</span><br>
-<strong style="color: var(--neon-blue); font-size: 1.2rem;">{fair_text}</strong>
-</div>
-<div>
-{action_btn}
-</div>
-</div>
-</div>'''
-            st.markdown(card_html, unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="car-card" style="max-width:760px; margin-left:auto; margin-right:auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 1.3rem; font-weight: 700; color: #fff;">{r['name']}</span>
+                    <div>{badge_html}</div>
+                </div>
+                <div style="display: flex; gap: 15px; margin-top: 8px; color: #94a3b8; font-size: 0.88rem;">
+                    <span>⚙️ {r['transmission']}</span>
+                    <span>🛣️ {km_text}</span>
+                    <span>📍 {r['location']}</span>
+                    <span>⚡ Match: {r['match_score']}%</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <span style="color: #94a3b8; font-size: 0.82rem;">Listed Price:</span><br>
+                        <strong style="color: #fff; font-size: 1.2rem;">{price_text}</strong>
+                    </div>
+                    <div>
+                        <span style="color: #94a3b8; font-size: 0.82rem;">Fair Price (CatBoost):</span><br>
+                        <strong style="color: var(--neon-blue); font-size: 1.2rem;">{fair_text}</strong>
+                    </div>
+                    <div>
+                        {action_btn}
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 else:
     st.markdown("""
-<div style="text-align: center; color: #8b929a; margin-top: 50px;">
-    <p style="font-size: 0.95rem;">Type your search query above and press <strong>Enter</strong> for instant search, or upload a car image 📷</p>
-</div>
-""", unsafe_allow_html=True)
+    <div style="text-align: center; color: #8b929a; margin-top: 50px;">
+        <p style="font-size: 0.95rem;">Type your search query above and press <strong>Enter</strong> for instant search, or upload a car image 📷</p>
+    </div>
+    """, unsafe_allow_html=True)
