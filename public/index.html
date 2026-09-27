@@ -1,1217 +1,1169 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apex Motors | Smart Car Market</title>
-    <meta name="description" content="Find the right car in Egypt with AI-powered search, real market listings, and fair price insights. Search by text or upload a car photo.">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚗</text></svg>">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
-    <style>
-        /* ── Design tokens ──────────────────────────────────────────────── */
-        :root {
-            --blue: #38bdf8;
-            --blue-dim: rgba(56,189,248,.18);
-            --blue-glow: rgba(56,189,248,.45);
-            --bg: #030712;
-            --bg-card: rgba(10,13,20,.88);
-            --text: #f1f5f9;
-            --muted: #94a3b8;
-            --border: rgba(56,189,248,.22);
-            --radius-card: 16px;
-            --shadow-card: 0 12px 32px rgba(0,0,0,.55);
-        }
-
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Inter', sans-serif;
-            min-height: 100vh;
-            overflow-x: hidden;
-        }
-
-        /* ── Background + light sweep ───────────────────────────────────── */
-        .bg-wrap {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-            overflow: hidden;
-        }
-
-        .bg-img {
-            position: absolute;
-            inset: 0;
-            background-image: url("/mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg");
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            opacity: .82;
-        }
-
-        .bg-img::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background:
-                linear-gradient(90deg, rgba(3,7,18,.88) 0%, rgba(3,7,18,.42) 48%, rgba(3,7,18,.88) 100%),
-                linear-gradient(180deg, rgba(3,7,18,.35) 0%, rgba(3,7,18,.15) 46%, rgba(3,7,18,.92) 100%);
-        }
-
-        .bg-img::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: radial-gradient(circle at 50% 38%, rgba(56,189,248,.07), transparent 42%);
-        }
-
-        /* Light sweep — only over the car area */
-        .sweep-zone {
-            position: absolute;
-            top: 18%;
-            left: 8%;
-            width: 84%;
-            height: 60%;
-            overflow: hidden;
-            border-radius: 42%;
-            mix-blend-mode: overlay;
-            pointer-events: none;
-        }
-
-        .sweep-beam {
-            position: absolute;
-            top: -60%;
-            left: -110%;
-            width: 55%;
-            height: 220%;
-            background: linear-gradient(
-                112deg,
-                transparent 0%,
-                rgba(255,255,255,0) 28%,
-                rgba(255,255,255,.42) 50%,
-                rgba(255,255,255,0) 72%,
-                transparent 100%
-            );
-            transform: skewX(-22deg);
-            filter: blur(12px);
-            animation: sweep 7s ease-in-out infinite;
-        }
-
-        @keyframes sweep {
-            0%   { left: -110%; opacity: 0; }
-            12%  { opacity: 1; }
-            48%  { left: 150%; opacity: 1; }
-            62%, 100% { left: 150%; opacity: 0; }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .sweep-beam { animation: none !important; opacity: 0 !important; }
-        }
-
-        /* ── Layout ─────────────────────────────────────────────────────── */
-        .wrap {
-            position: relative;
-            z-index: 2;
-            max-width: 1240px;
-            margin: 0 auto;
-            padding: 2.5rem 1.25rem 5rem;
-        }
-
-        /* ── Hero ───────────────────────────────────────────────────────── */
-        .hero {
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
-
-        .hero-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 16px;
-            margin-bottom: 14px;
-            border: 1px solid rgba(56,189,248,.28);
-            border-radius: 999px;
-            background: rgba(15,23,42,.72);
-            color: #e2e8f0;
-            font-size: .72rem;
-            font-weight: 800;
-            letter-spacing: 2px;
-            backdrop-filter: blur(10px);
-        }
-
-        h1 {
-            color: #fff;
-            font-size: clamp(2.6rem, 5vw, 4.2rem);
-            font-weight: 800;
-            letter-spacing: -2px;
-            line-height: 1.1;
-            text-shadow: 0 10px 40px rgba(0,0,0,.9);
-        }
-
-        h1 span { color: var(--blue); text-shadow: 0 0 30px rgba(56,189,248,.5); }
-
-        .hero-line {
-            width: 54px;
-            height: 3px;
-            background: var(--blue);
-            border-radius: 99px;
-            margin: 14px auto 0;
-            box-shadow: 0 0 20px var(--blue-glow);
-        }
-
-        .hero-sub {
-            color: #d1d5db;
-            font-size: .95rem;
-            max-width: 620px;
-            margin: 12px auto 0;
-            line-height: 1.6;
-            text-shadow: 0 3px 18px #000;
-        }
-
-        /* ── Feature badges ─────────────────────────────────────────────── */
-        .feat-row {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            max-width: 760px;
-            margin: 18px auto 26px;
-        }
-
-        .feat-item {
-            text-align: center;
-            padding: 5px 16px;
-            border-right: 1px solid rgba(255,255,255,.12);
-        }
-
-        .feat-item:last-child { border-right: none; }
-        .feat-icon { color: var(--blue); font-size: 1rem; margin-bottom: 3px; }
-        .feat-title { color: #fff; font-size: .76rem; font-weight: 700; }
-        .feat-desc { color: #9ca3af; font-size: .64rem; margin-top: 2px; }
-
-        @media (max-width: 640px) {
-            .feat-row { grid-template-columns: repeat(2, 1fr); gap: 14px; }
-            .feat-item { border-right: none; }
-        }
-
-        /* ── Search bar ─────────────────────────────────────────────────── */
-        .search-wrap {
-            max-width: 760px;
-            margin: 0 auto 18px;
-        }
-
-        .search-form {
-            display: flex;
-            align-items: center;
-            height: 54px;
-            padding: 0 14px 0 24px;
-            gap: 10px;
-            background: linear-gradient(180deg, rgba(15,23,42,.93), rgba(3,7,18,.97));
-            border: 1.2px solid rgba(56,189,248,.42);
-            border-radius: 999px;
-            box-shadow: 0 16px 48px rgba(0,0,0,.75), inset 0 1px 0 rgba(56,189,248,.18);
-            backdrop-filter: blur(18px);
-        }
-
-        .search-input {
-            flex: 1;
-            background: transparent;
-            border: none;
-            outline: none;
-            color: #fff;
-            font-size: .95rem;
-            font-family: 'Inter', sans-serif;
-        }
-
-        .search-input::placeholder { color: #94a3b8; }
-
-        .cam-btn {
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            font-size: 1.22rem;
-            opacity: .85;
-            transition: transform .2s, opacity .2s;
-            flex-shrink: 0;
-        }
-
-        .cam-btn:hover { transform: scale(1.18); opacity: 1; }
-
-        .search-btn {
-            background: var(--blue-dim);
-            border: 1px solid var(--blue);
-            color: #fff;
-            font-family: 'Inter', sans-serif;
-            font-size: .85rem;
-            font-weight: 700;
-            padding: 7px 18px;
-            border-radius: 999px;
-            cursor: pointer;
-            transition: background .2s, box-shadow .2s;
-            flex-shrink: 0;
-        }
-
-        .search-btn:hover {
-            background: var(--blue-glow);
-            box-shadow: 0 0 14px var(--blue-glow);
-        }
-
-        /* ── Image preview ──────────────────────────────────────────────── */
-        .img-preview-wrap {
-            display: none;
-            align-items: center;
-            gap: 12px;
-            max-width: 760px;
-            margin: 10px auto 0;
-            background: rgba(15,23,42,.82);
-            border: 1px solid rgba(56,189,248,.3);
-            border-radius: 12px;
-            padding: 8px 14px;
-            backdrop-filter: blur(10px);
-        }
-
-        .img-preview-wrap.visible { display: flex; }
-
-        .preview-thumb {
-            width: 46px;
-            height: 46px;
-            object-fit: cover;
-            border-radius: 8px;
-            border: 1px solid var(--blue);
-            flex-shrink: 0;
-        }
-
-        .preview-meta { flex: 1; font-size: .83rem; color: #e2e8f0; }
-        .preview-meta small { color: #94a3b8; font-size: .72rem; display: block; margin-top: 2px; }
-
-        .remove-btn {
-            background: rgba(239,68,68,.18);
-            border: 1px solid rgba(239,68,68,.4);
-            color: #fca5a5;
-            border-radius: 6px;
-            padding: 4px 10px;
-            cursor: pointer;
-            font-size: .78rem;
-            transition: background .2s;
-        }
-
-        .remove-btn:hover { background: rgba(239,68,68,.35); }
-
-        /* ── Detected badge ─────────────────────────────────────────────── */
-        .detected-wrap {
-            text-align: center;
-            margin: 14px 0;
-            display: none;
-        }
-
-        .detected-wrap.visible { display: block; }
-
-        .detected-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(56,189,248,.12);
-            border: 1px solid var(--blue);
-            color: #fff;
-            padding: 7px 20px;
-            border-radius: 20px;
-            font-size: .88rem;
-        }
-
-        .detected-alts {
-            margin-top: 8px;
-            display: flex;
-            justify-content: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .alt-pill {
-            background: rgba(56,189,248,.07);
-            border: 1px solid rgba(56,189,248,.25);
-            color: #94a3b8;
-            padding: 3px 12px;
-            border-radius: 999px;
-            font-size: .73rem;
-            cursor: pointer;
-            transition: all .2s;
-        }
-
-        .alt-pill:hover { background: var(--blue-dim); color: #fff; }
-
-        /* ── Status: spinner / error ────────────────────────────────────── */
-        .spinner {
-            text-align: center;
-            color: var(--blue);
-            font-weight: 600;
-            font-size: .93rem;
-            margin: 40px 0;
-            display: none;
-        }
-
-        .spinner.visible { display: block; }
-
-        @keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
-        .spinner.visible { animation: pulse 1.4s ease-in-out infinite; }
-
-        .error-box {
-            max-width: 760px;
-            margin: 22px auto;
-            background: rgba(239,68,68,.1);
-            border: 1px solid rgba(239,68,68,.48);
-            color: #fca5a5;
-            padding: 14px 18px;
-            border-radius: 12px;
-            text-align: center;
-            font-size: .9rem;
-            display: none;
-        }
-
-        .error-box.visible { display: block; }
-
-        /* ── Results header ─────────────────────────────────────────────── */
-        .results-hdr {
-            color: #e2e8f0;
-            font-size: 1.05rem;
-            font-weight: 700;
-            margin: 32px auto 16px;
-            max-width: 1200px;
-            display: none;
-        }
-
-        .results-hdr.visible { display: block; }
-
-        /* ── 3-col compact grid ─────────────────────────────────────────── */
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        @media (max-width: 992px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
-
-        /* ── Card ───────────────────────────────────────────────────────── */
-        .card {
-            background: var(--bg-card);
-            border: 1.2px solid var(--border);
-            border-radius: var(--radius-card);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            box-shadow: var(--shadow-card);
-            backdrop-filter: blur(14px);
-            transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
-        }
-
-        .card:hover {
-            transform: translateY(-3px);
-            border-color: rgba(56,189,248,.5);
-            box-shadow: 0 18px 44px rgba(56,189,248,.14);
-        }
-
-        /* ── Gallery ────────────────────────────────────────────────────── */
-        .gallery {
-            position: relative;
-            width: 100%;
-            height: 176px;
-            background: #080c14;
-            overflow: hidden;
-            flex-shrink: 0;
-        }
-
-        .gallery-track {
-            display: flex;
-            height: 100%;
-            transition: transform .3s ease;
-            will-change: transform;
-        }
-
-        .gallery-slide {
-            min-width: 100%;
-            height: 100%;
-            position: relative;
-            flex-shrink: 0;
-        }
-
-        .gallery-img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform .3s ease;
-        }
-
-        .card:hover .gallery-img { transform: scale(1.04); }
-
-        /* Blurred "more" panel — the last slide */
-        .gallery-more-slide {
-            min-width: 100%;
-            height: 100%;
-            position: relative;
-            flex-shrink: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: rgba(8,12,20,.6);
-            cursor: pointer;
-        }
-
-        .gallery-more-slide::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            backdrop-filter: blur(6px);
-        }
-
-        .gallery-more-label {
-            position: relative;
-            z-index: 1;
-            color: #fff;
-            font-size: .88rem;
-            font-weight: 700;
-            text-align: center;
-            pointer-events: none;
-        }
-
-        .gallery-more-label small { display: block; color: var(--blue); font-size: .72rem; margin-top: 4px; }
-
-        /* Arrows */
-        .gallery-arrow {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(3,7,18,.7);
-            border: 1px solid rgba(56,189,248,.3);
-            border-radius: 50%;
-            width: 28px;
-            height: 28px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            color: #fff;
-            font-size: .7rem;
-            z-index: 10;
-            opacity: 0;
-            transition: opacity .2s, background .2s;
-            user-select: none;
-        }
-
-        .gallery:hover .gallery-arrow { opacity: 1; }
-        .gallery-arrow:hover { background: rgba(56,189,248,.28); }
-        .gallery-arrow.prev { left: 6px; }
-        .gallery-arrow.next { right: 6px; }
-        .gallery-arrow[hidden] { display: none; }
-
-        /* Dots */
-        .gallery-dots {
-            position: absolute;
-            bottom: 6px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 4px;
-            z-index: 10;
-        }
-
-        .gallery-dot {
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            background: rgba(255,255,255,.4);
-            transition: background .2s, transform .2s;
-        }
-
-        .gallery-dot.active { background: var(--blue); transform: scale(1.35); }
-
-        /* No-image placeholder */
-        .no-photo {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, #0b111e 0%, #050811 100%);
-            color: #475569;
-            gap: 6px;
-            font-size: .72rem;
-        }
-
-        /* ── Card body ──────────────────────────────────────────────────── */
-        .card-body {
-            padding: 14px 16px 16px;
-            display: flex;
-            flex-direction: column;
-            flex: 1;
-            gap: 9px;
-        }
-
-        .card-title-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 8px;
-        }
-
-        .card-title {
-            font-size: 1rem;
-            font-weight: 700;
-            color: #fff;
-            line-height: 1.3;
-        }
-
-        /* Deal badges */
-        .badge {
-            flex-shrink: 0;
-            font-weight: 700;
-            padding: 3px 9px;
-            border-radius: 20px;
-            font-size: .71rem;
-            white-space: nowrap;
-        }
-
-        .badge-great { background: rgba(34,197,94,.14); border: 1px solid rgba(34,197,94,.6); color: #86efac; }
-        .badge-over  { background: rgba(239,68,68,.14);  border: 1px solid rgba(239,68,68,.6);  color: #fca5a5; }
-        .badge-fair  { background: rgba(56,189,248,.14); border: 1px solid rgba(56,189,248,.6); color: #bae6fd; }
-
-        /* Specs chips */
-        .specs {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            color: var(--muted);
-            font-size: .78rem;
-        }
-
-        /* Pricing area */
-        .price-area {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            padding-top: 10px;
-            border-top: 1px solid rgba(255,255,255,.07);
-            margin-top: auto;
-        }
-
-        .price-label { color: var(--muted); font-size: .71rem; display: block; margin-bottom: 2px; }
-        .price-val { color: #fff; font-size: 1.1rem; font-weight: 800; }
-        .price-val.missing { color: var(--muted); font-size: .82rem; font-weight: 500; }
-        .est-val { color: var(--blue); font-size: .98rem; font-weight: 700; }
-        .est-val.na { color: #475569; font-size: .78rem; font-weight: 500; }
-
-        /* View button */
-        .view-btn {
-            display: block;
-            width: 100%;
-            text-align: center;
-            background: var(--blue-dim);
-            border: 1px solid var(--blue);
-            color: #fff;
-            padding: 8px 14px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 700;
-            font-size: .83rem;
-            transition: background .2s, box-shadow .2s;
-            margin-top: 10px;
-        }
-
-        .view-btn:hover { background: rgba(56,189,248,.28); box-shadow: 0 0 14px rgba(56,189,248,.32); }
-        .view-btn.disabled { opacity: .4; pointer-events: none; cursor: default; }
-
-        /* ── Load more ──────────────────────────────────────────────────── */
-        .load-more-wrap {
-            text-align: center;
-            margin: 32px 0 16px;
-            display: none;
-        }
-
-        .load-more-wrap.visible { display: block; }
-
-        .load-more-btn {
-            background: linear-gradient(180deg, rgba(15,23,42,.92), rgba(3,7,18,.97));
-            border: 1.5px solid var(--blue);
-            color: #fff;
-            padding: 11px 32px;
-            border-radius: 999px;
-            font-size: .93rem;
-            font-weight: 700;
-            font-family: 'Inter', sans-serif;
-            cursor: pointer;
-            box-shadow: 0 8px 28px rgba(0,0,0,.55);
-            transition: background .2s, box-shadow .2s, transform .2s;
-        }
-
-        .load-more-btn:hover {
-            background: rgba(56,189,248,.18);
-            box-shadow: 0 0 26px rgba(56,189,248,.38);
-            transform: translateY(-2px);
-        }
-
-        /* ── Empty state ────────────────────────────────────────────────── */
-        .empty {
-            text-align: center;
-            color: #64748b;
-            margin: 52px 0 0;
-            font-size: .93rem;
-            line-height: 1.7;
-        }
-
-        .empty strong { color: #94a3b8; }
-        .empty em { color: var(--blue); font-style: normal; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apex Motors | Smart Car Market</title>
+<meta name="description" content="Find the right car in Egypt with AI-powered search, real market listings, fair price insights, and advanced filters.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚗</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- PDF generation -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+<style>
+/* ── Tokens ─────────────────────────────────────────────────────────────── */
+:root{
+  --blue:#38bdf8; --blue-dim:rgba(56,189,248,.16); --blue-glow:rgba(56,189,248,.42);
+  --bg:#030712; --card-bg:rgba(10,13,20,.88);
+  --text:#f1f5f9; --muted:#94a3b8; --border:rgba(56,189,248,.22);
+  --rad:16px; --shadow:0 12px 32px rgba(0,0,0,.55);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;overflow-x:hidden}
+
+/* ── Background ──────────────────────────────────────────────────────────── */
+.bg-wrap{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.bg-img{position:absolute;inset:0;background-image:url("/mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg");background-size:cover;background-position:center;opacity:.82}
+.bg-img::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(3,7,18,.88) 0%,rgba(3,7,18,.42) 48%,rgba(3,7,18,.88) 100%),linear-gradient(180deg,rgba(3,7,18,.35) 0%,rgba(3,7,18,.15) 46%,rgba(3,7,18,.92) 100%)}
+.bg-img::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 38%,rgba(56,189,248,.07),transparent 42%)}
+.sweep-zone{position:absolute;top:18%;left:8%;width:84%;height:60%;overflow:hidden;border-radius:42%;mix-blend-mode:overlay}
+.sweep-beam{position:absolute;top:-60%;left:-110%;width:55%;height:220%;background:linear-gradient(112deg,transparent 0%,rgba(255,255,255,0) 28%,rgba(255,255,255,.42) 50%,rgba(255,255,255,0) 72%,transparent 100%);transform:skewX(-22deg);filter:blur(12px);animation:sweep 7s ease-in-out infinite}
+@keyframes sweep{0%{left:-110%;opacity:0}12%{opacity:1}48%{left:150%;opacity:1}62%,100%{left:150%;opacity:0}}
+@media(prefers-reduced-motion:reduce){.sweep-beam{animation:none!important;opacity:0!important}}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.wrap{position:relative;z-index:2;max-width:1240px;margin:0 auto;padding:2.5rem 1.25rem 5rem}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+.hero{text-align:center;margin-bottom:1.5rem}
+.hero-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;margin-bottom:14px;border:1px solid rgba(56,189,248,.28);border-radius:999px;background:rgba(15,23,42,.72);color:#e2e8f0;font-size:.72rem;font-weight:800;letter-spacing:2px;backdrop-filter:blur(10px)}
+h1{color:#fff;font-size:clamp(2.6rem,5vw,4.2rem);font-weight:800;letter-spacing:-2px;line-height:1.1;text-shadow:0 10px 40px rgba(0,0,0,.9)}
+h1 span{color:var(--blue);text-shadow:0 0 30px rgba(56,189,248,.5)}
+.hero-line{width:54px;height:3px;background:var(--blue);border-radius:99px;margin:14px auto 0;box-shadow:0 0 20px var(--blue-glow)}
+.hero-sub{color:#d1d5db;font-size:.95rem;max-width:620px;margin:12px auto 0;line-height:1.6;text-shadow:0 3px 18px #000}
+
+/* ── Feature row ──────────────────────────────────────────────────────────── */
+.feat-row{display:grid;grid-template-columns:repeat(4,1fr);max-width:760px;margin:18px auto 24px}
+.feat-item{text-align:center;padding:5px 16px;border-right:1px solid rgba(255,255,255,.12)}
+.feat-item:last-child{border-right:none}
+.feat-icon{color:var(--blue);font-size:1rem;margin-bottom:3px}
+.feat-title{color:#fff;font-size:.76rem;font-weight:700}
+.feat-desc{color:#9ca3af;font-size:.64rem;margin-top:2px}
+@media(max-width:640px){.feat-row{grid-template-columns:repeat(2,1fr);gap:14px}.feat-item{border-right:none}}
+
+/* ── Search bar ───────────────────────────────────────────────────────────── */
+.search-wrap{max-width:860px;margin:0 auto 10px}
+.search-row{display:flex;gap:10px;align-items:center}
+.search-form{flex:1;display:flex;align-items:center;height:54px;padding:0 12px 0 22px;gap:10px;background:linear-gradient(180deg,rgba(15,23,42,.93),rgba(3,7,18,.97));border:1.2px solid rgba(56,189,248,.42);border-radius:999px;box-shadow:0 16px 48px rgba(0,0,0,.75),inset 0 1px 0 rgba(56,189,248,.18);backdrop-filter:blur(18px)}
+.search-input{flex:1;background:transparent;border:none;outline:none;color:#fff;font-size:.95rem;font-family:'Inter',sans-serif}
+.search-input::placeholder{color:#94a3b8}
+.cam-btn{background:transparent;border:none;cursor:pointer;font-size:1.2rem;opacity:.85;transition:transform .2s,opacity .2s;flex-shrink:0}
+.cam-btn:hover{transform:scale(1.18);opacity:1}
+.search-btn{background:var(--blue-dim);border:1px solid var(--blue);color:#fff;font-family:'Inter',sans-serif;font-size:.85rem;font-weight:700;padding:7px 18px;border-radius:999px;cursor:pointer;transition:background .2s,box-shadow .2s;white-space:nowrap}
+.search-btn:hover{background:var(--blue-glow);box-shadow:0 0 14px var(--blue-glow)}
+.filter-toggle-btn{background:rgba(15,23,42,.8);border:1px solid var(--border);color:var(--blue);padding:0 18px;height:44px;border-radius:22px;font-size:.85rem;font-weight:700;font-family:'Inter',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all .2s;white-space:nowrap;flex-shrink:0}
+.filter-toggle-btn:hover,.filter-toggle-btn.open{background:var(--blue-dim);border-color:var(--blue)}
+.filter-badge{background:var(--blue);color:#000;border-radius:50%;width:18px;height:18px;font-size:.65rem;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+
+/* ── Filter panel ─────────────────────────────────────────────────────────── */
+.filter-panel{max-width:860px;margin:8px auto 0;background:rgba(10,14,22,.92);border:1px solid var(--border);border-radius:14px;padding:18px 20px 16px;backdrop-filter:blur(16px);display:none}
+.filter-panel.open{display:block}
+.filter-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 20px}
+@media(max-width:768px){.filter-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){.filter-grid{grid-template-columns:1fr}}
+.f-group{display:flex;flex-direction:column;gap:5px}
+.f-label{font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.f-input,.f-select{background:rgba(15,23,42,.7);border:1px solid rgba(56,189,248,.25);border-radius:8px;color:#fff;font-family:'Inter',sans-serif;font-size:.85rem;padding:7px 10px;outline:none;transition:border-color .2s;width:100%}
+.f-input:focus,.f-select:focus{border-color:var(--blue)}
+.f-select option{background:#0f172a}
+.f-range-row{display:flex;gap:8px;align-items:center}
+.f-range-row .f-input{flex:1}
+.f-range-sep{color:var(--muted);font-size:.8rem;flex-shrink:0}
+.f-presets{display:flex;flex-wrap:wrap;gap:6px}
+.f-preset{background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.22);color:var(--muted);border-radius:20px;padding:4px 12px;font-size:.76rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif}
+.f-preset:hover{background:var(--blue-dim);color:#fff;border-color:var(--blue)}
+.f-preset.active{background:var(--blue-dim);border-color:var(--blue);color:#fff}
+.filter-actions{display:flex;gap:10px;margin-top:16px;justify-content:flex-end}
+.btn-apply{background:var(--blue);color:#000;border:none;border-radius:8px;padding:8px 22px;font-size:.85rem;font-weight:800;font-family:'Inter',sans-serif;cursor:pointer;transition:opacity .2s}
+.btn-apply:hover{opacity:.85}
+.btn-clear{background:transparent;border:1px solid rgba(239,68,68,.4);color:#fca5a5;border-radius:8px;padding:8px 16px;font-size:.82rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .2s}
+.btn-clear:hover{background:rgba(239,68,68,.12)}
+
+/* ── Active filter chips ─────────────────────────────────────────────────── */
+.chips-row{max-width:860px;margin:8px auto 0;display:flex;flex-wrap:wrap;gap:7px;min-height:0}
+.chip{display:inline-flex;align-items:center;gap:5px;background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);border-radius:20px;padding:4px 10px 4px 12px;font-size:.76rem;color:#bae6fd;font-weight:600}
+.chip-x{background:none;border:none;color:#94a3b8;cursor:pointer;font-size:.85rem;line-height:1;padding:0 2px;transition:color .15s}
+.chip-x:hover{color:#fca5a5}
+
+/* ── Image preview ───────────────────────────────────────────────────────── */
+.img-preview-wrap{display:none;align-items:center;gap:12px;max-width:860px;margin:10px auto 0;background:rgba(15,23,42,.82);border:1px solid rgba(56,189,248,.3);border-radius:12px;padding:8px 14px;backdrop-filter:blur(10px)}
+.img-preview-wrap.visible{display:flex}
+.preview-thumb{width:46px;height:46px;object-fit:cover;border-radius:8px;border:1px solid var(--blue);flex-shrink:0}
+.preview-meta{flex:1;font-size:.83rem;color:#e2e8f0}
+.preview-meta small{color:#94a3b8;font-size:.72rem;display:block;margin-top:2px}
+.remove-btn{background:rgba(239,68,68,.18);border:1px solid rgba(239,68,68,.4);color:#fca5a5;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.78rem;transition:background .2s}
+.remove-btn:hover{background:rgba(239,68,68,.35)}
+
+/* ── Analysis panel ──────────────────────────────────────────────────────── */
+.analysis-panel{max-width:860px;margin:14px auto 0;background:rgba(10,14,22,.9);border:1px solid rgba(56,189,248,.35);border-radius:14px;padding:18px 20px;backdrop-filter:blur(14px);display:none}
+.analysis-panel.visible{display:block}
+.ap-header{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.ap-icon{font-size:1.8rem;flex-shrink:0;margin-top:2px}
+.ap-main{flex:1}
+.ap-title{font-size:1.05rem;font-weight:800;color:#fff;margin-bottom:4px}
+.ap-detected{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.ap-vehicle{font-size:1.12rem;font-weight:700;color:var(--blue)}
+.ap-conf{background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.3);border-radius:20px;padding:2px 10px;font-size:.72rem;color:#bae6fd}
+.ap-note{font-size:.78rem;color:var(--muted);line-height:1.5;margin-bottom:10px;padding:8px 10px;background:rgba(234,179,8,.06);border-left:2px solid rgba(234,179,8,.4);border-radius:0 6px 6px 0}
+.ap-alts-label{font-size:.72rem;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.ap-alts{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+.alt-pill{background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.22);color:#94a3b8;padding:4px 12px;border-radius:999px;font-size:.75rem;cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif}
+.alt-pill:hover{background:var(--blue-dim);color:#fff;border-color:var(--blue)}
+.ap-correct{display:flex;gap:8px;align-items:center;margin-top:6px}
+.ap-correct-input{flex:1;background:rgba(15,23,42,.7);border:1px solid rgba(56,189,248,.25);border-radius:8px;color:#fff;font-family:'Inter',sans-serif;font-size:.85rem;padding:7px 10px;outline:none;transition:border-color .2s}
+.ap-correct-input:focus{border-color:var(--blue)}
+.ap-correct-btn{background:var(--blue-dim);border:1px solid var(--blue);color:#fff;border-radius:8px;padding:7px 14px;font-size:.82rem;font-weight:700;font-family:'Inter',sans-serif;cursor:pointer;transition:all .2s;white-space:nowrap}
+.ap-correct-btn:hover{background:var(--blue-glow)}
+
+/* ── Status ──────────────────────────────────────────────────────────────── */
+.spinner{text-align:center;color:var(--blue);font-weight:600;font-size:.93rem;margin:40px 0;display:none}
+.spinner.visible{display:block;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
+.error-box{max-width:860px;margin:22px auto;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.48);color:#fca5a5;padding:14px 18px;border-radius:12px;text-align:center;font-size:.9rem;display:none}
+.error-box.visible{display:block}
+
+/* ── Results header + price stats ────────────────────────────────────────── */
+.results-hdr-row{max-width:1200px;margin:32px auto 12px;display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.results-hdr-row.visible{display:flex}
+.results-hdr{color:#e2e8f0;font-size:1.05rem;font-weight:700}
+.price-stat-pill{background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.2);border-radius:20px;padding:4px 14px;font-size:.76rem;color:#bae6fd}
+.pdf-btn{background:rgba(15,23,42,.85);border:1px solid var(--border);color:var(--blue);padding:7px 16px;border-radius:8px;font-size:.8rem;font-weight:700;font-family:'Inter',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .2s;text-decoration:none}
+.pdf-btn:hover{background:var(--blue-dim);border-color:var(--blue);box-shadow:0 0 12px rgba(56,189,248,.25)}
+.pdf-btn.loading{opacity:.6;pointer-events:none}
+
+/* ── 3-col grid ───────────────────────────────────────────────────────────── */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1200px;margin:0 auto}
+@media(max-width:992px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.grid{grid-template-columns:1fr}}
+
+/* ── Card ─────────────────────────────────────────────────────────────────── */
+.card{background:var(--card-bg);border:1.2px solid var(--border);border-radius:var(--rad);overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow);backdrop-filter:blur(14px);transition:transform .22s,border-color .22s,box-shadow .22s}
+.card:hover{transform:translateY(-3px);border-color:rgba(56,189,248,.5);box-shadow:0 18px 44px rgba(56,189,248,.14)}
+
+/* ── Gallery ──────────────────────────────────────────────────────────────── */
+.gallery{position:relative;width:100%;height:176px;background:#080c14;overflow:hidden;flex-shrink:0}
+.gallery-track{display:flex;height:100%;transition:transform .3s ease;will-change:transform}
+.gallery-slide{min-width:100%;height:100%;position:relative;flex-shrink:0}
+.gallery-img{width:100%;height:100%;object-fit:cover;transition:transform .3s ease}
+.card:hover .gallery-img{transform:scale(1.04)}
+.gallery-more-slide{min-width:100%;height:100%;position:relative;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,12,20,.6);cursor:pointer}
+.gallery-more-slide::before{content:"";position:absolute;inset:0;backdrop-filter:blur(6px)}
+.gallery-more-label{position:relative;z-index:1;color:#fff;font-size:.88rem;font-weight:700;text-align:center;pointer-events:none}
+.gallery-more-label small{display:block;color:var(--blue);font-size:.72rem;margin-top:4px}
+.gallery-arrow{position:absolute;top:50%;transform:translateY(-50%);background:rgba(3,7,18,.7);border:1px solid rgba(56,189,248,.3);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:.7rem;z-index:10;opacity:0;transition:opacity .2s,background .2s;user-select:none}
+.gallery:hover .gallery-arrow{opacity:1}
+.gallery-arrow:hover{background:rgba(56,189,248,.28)}
+.gallery-arrow.prev{left:6px}
+.gallery-arrow.next{right:6px}
+.gallery-arrow[hidden]{display:none}
+.gallery-dots{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);display:flex;gap:4px;z-index:10}
+.gallery-dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.4);transition:background .2s,transform .2s}
+.gallery-dot.active{background:var(--blue);transform:scale(1.35)}
+.no-photo{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#0b111e 0%,#050811 100%);color:#475569;gap:6px;font-size:.72rem}
+
+/* ── Card body ────────────────────────────────────────────────────────────── */
+.card-body{padding:14px 16px 16px;display:flex;flex-direction:column;flex:1;gap:9px}
+.card-title-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.card-title{font-size:1rem;font-weight:700;color:#fff;line-height:1.3}
+.badge{flex-shrink:0;font-weight:700;padding:3px 9px;border-radius:20px;font-size:.71rem;white-space:nowrap}
+.badge-great{background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.6);color:#86efac}
+.badge-over{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.6);color:#fca5a5}
+.badge-fair{background:rgba(56,189,248,.14);border:1px solid rgba(56,189,248,.6);color:#bae6fd}
+.specs{display:flex;flex-wrap:wrap;gap:8px;color:var(--muted);font-size:.78rem}
+.price-area{display:flex;justify-content:space-between;align-items:flex-end;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);margin-top:auto}
+.price-label{color:var(--muted);font-size:.71rem;display:block;margin-bottom:2px}
+.price-val{color:#fff;font-size:1.1rem;font-weight:800}
+.price-val.missing{color:var(--muted);font-size:.82rem;font-weight:500}
+.est-val{color:var(--blue);font-size:.98rem;font-weight:700}
+.est-val.na{color:#475569;font-size:.78rem;font-weight:500}
+.view-btn{display:block;width:100%;text-align:center;background:var(--blue-dim);border:1px solid var(--blue);color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:700;font-size:.83rem;transition:background .2s,box-shadow .2s;margin-top:10px}
+.view-btn:hover{background:rgba(56,189,248,.28);box-shadow:0 0 14px rgba(56,189,248,.32)}
+.view-btn.disabled{opacity:.4;pointer-events:none}
+
+/* ── Load more ───────────────────────────────────────────────────────────── */
+.load-more-wrap{text-align:center;margin:32px 0 16px;display:none}
+.load-more-wrap.visible{display:block}
+.load-more-btn{background:linear-gradient(180deg,rgba(15,23,42,.92),rgba(3,7,18,.97));border:1.5px solid var(--blue);color:#fff;padding:11px 32px;border-radius:999px;font-size:.93rem;font-weight:700;font-family:'Inter',sans-serif;cursor:pointer;box-shadow:0 8px 28px rgba(0,0,0,.55);transition:background .2s,box-shadow .2s,transform .2s}
+.load-more-btn:hover{background:rgba(56,189,248,.18);box-shadow:0 0 26px rgba(56,189,248,.38);transform:translateY(-2px)}
+
+/* ── Empty state ──────────────────────────────────────────────────────────── */
+.empty{text-align:center;color:#64748b;margin:52px 0 0;font-size:.93rem;line-height:1.7}
+.empty strong{color:#94a3b8}
+.empty em{color:var(--blue);font-style:normal}
+
+/* ── PDF print area (hidden, light theme) ───────────────────────────────── */
+.pdf-area{
+  position:absolute;left:-9999px;top:0;width:960px;
+  background:#fff;color:#111;font-family:'Inter',sans-serif;
+  padding:40px;font-size:13px;line-height:1.6;
+}
+.pdf-area .pdf-header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #38bdf8;padding-bottom:12px;margin-bottom:20px}
+.pdf-area .pdf-title{font-size:22px;font-weight:800;color:#0ea5e9}
+.pdf-area .pdf-date{font-size:12px;color:#64748b}
+.pdf-area .pdf-analysis-box{background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px 16px;margin-bottom:20px}
+.pdf-area .pdf-analysis-title{font-weight:700;color:#0369a1;margin-bottom:6px}
+.pdf-area .pdf-filters{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:12px}
+.pdf-area .pdf-stats{display:flex;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+.pdf-area .pdf-stat{background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:8px 14px;flex:1;min-width:120px}
+.pdf-area .pdf-stat-label{font-size:11px;color:#64748b}
+.pdf-area .pdf-stat-val{font-size:16px;font-weight:800;color:#0369a1}
+.pdf-area .pdf-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.pdf-area .pdf-card{border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.pdf-area .pdf-card-img{width:100%;height:100px;object-fit:cover;background:#f1f5f9}
+.pdf-area .pdf-card-body{padding:10px 12px}
+.pdf-area .pdf-card-name{font-weight:700;font-size:12px;margin-bottom:4px;color:#1e293b}
+.pdf-area .pdf-card-specs{font-size:11px;color:#64748b;margin-bottom:6px}
+.pdf-area .pdf-card-price{font-size:13px;font-weight:800;color:#0369a1}
+.pdf-area .pdf-card-est{font-size:11px;color:#64748b}
+.pdf-area .pdf-card-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-bottom:4px}
+.pdf-area .badge-great-pdf{background:#dcfce7;color:#166534}
+.pdf-area .badge-over-pdf{background:#fee2e2;color:#991b1b}
+.pdf-area .badge-fair-pdf{background:#e0f2fe;color:#075985}
+.pdf-area .pdf-card-link{font-size:10px;color:#0ea5e9;word-break:break-all}
+.pdf-area .pdf-footer{margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8}
+.pdf-area .pdf-disclaimer{background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px 12px;margin-top:14px;font-size:11px;color:#92400e}
+</style>
 </head>
 <body>
 
-<!-- ── Background ──────────────────────────────────────────────────────────── -->
 <div class="bg-wrap" aria-hidden="true">
-    <div class="bg-img"></div>
-    <div class="sweep-zone">
-        <div class="sweep-beam"></div>
-    </div>
+  <div class="bg-img"></div>
+  <div class="sweep-zone"><div class="sweep-beam"></div></div>
 </div>
 
-<!-- ── Main ────────────────────────────────────────────────────────────────── -->
 <main class="wrap">
 
-    <!-- Hero -->
-    <header class="hero">
-        <div class="hero-pill">✦ SMART CAR MARKET</div>
-        <h1>Apex <span>Motors</span></h1>
-        <div class="hero-line"></div>
-        <p class="hero-sub">Find the right car, get expert insights, and make smarter decisions with the power of AI.</p>
-    </header>
+  <!-- Hero -->
+  <header class="hero">
+    <div class="hero-pill">✦ SMART CAR MARKET</div>
+    <h1>Apex <span>Motors</span></h1>
+    <div class="hero-line"></div>
+    <p class="hero-sub">Find the right car, get expert insights, and make smarter decisions with the power of AI.</p>
+  </header>
 
-    <!-- Feature badges -->
-    <div class="feat-row" role="list">
-        <div class="feat-item" role="listitem"><div class="feat-icon">⌁</div><div class="feat-title">Analysis</div><div class="feat-desc">Understand your needs</div></div>
-        <div class="feat-item" role="listitem"><div class="feat-icon">▧</div><div class="feat-title">Image Detection</div><div class="feat-desc">Identify car details</div></div>
-        <div class="feat-item" role="listitem"><div class="feat-icon">◇</div><div class="feat-title">Price Insights</div><div class="feat-desc">Fair market estimates</div></div>
-        <div class="feat-item" role="listitem"><div class="feat-icon">▥</div><div class="feat-title">Smart Results</div><div class="feat-desc">Real live listings</div></div>
+  <!-- Features -->
+  <div class="feat-row" role="list">
+    <div class="feat-item" role="listitem"><div class="feat-icon">⌁</div><div class="feat-title">Analysis</div><div class="feat-desc">Understand your needs</div></div>
+    <div class="feat-item" role="listitem"><div class="feat-icon">▧</div><div class="feat-title">Image Detection</div><div class="feat-desc">Identify car details</div></div>
+    <div class="feat-item" role="listitem"><div class="feat-icon">◇</div><div class="feat-title">Price Insights</div><div class="feat-desc">Fair market estimates</div></div>
+    <div class="feat-item" role="listitem"><div class="feat-icon">▥</div><div class="feat-title">Smart Filters</div><div class="feat-desc">Narrow your search</div></div>
+  </div>
+
+  <!-- Search + filter toggle -->
+  <div class="search-wrap">
+    <div class="search-row">
+      <form class="search-form" id="search-form" onsubmit="event.preventDefault(); initiateSearch();">
+        <input type="text" id="search-input" class="search-input"
+          placeholder="Try 'Toyota Corolla', 'Kia Sportage', 'Mercedes C180'…"
+          autocomplete="off" aria-label="Search for a vehicle">
+        <button type="button" class="cam-btn" id="cam-btn" title="Upload car image for AI recognition"
+          onclick="triggerFileSelect()" aria-label="Upload car image">📷</button>
+        <input type="file" id="file-input" accept="image/*" style="display:none" aria-label="Car image file input">
+        <button type="submit" class="search-btn">Search</button>
+      </form>
+      <button class="filter-toggle-btn" id="filter-toggle" type="button" onclick="toggleFilters()" aria-expanded="false">
+        ⚙ Filters <span class="filter-badge" id="filter-badge" style="display:none">0</span>
+      </button>
     </div>
 
-    <!-- Search -->
-    <div class="search-wrap">
-        <form class="search-form" id="search-form" onsubmit="event.preventDefault(); initiateSearch();">
-            <input
-                type="text"
-                id="search-input"
-                class="search-input"
-                placeholder="Try 'Toyota Corolla', 'Kia Sportage', 'Mercedes C180'…"
-                autocomplete="off"
-                aria-label="Search for a vehicle"
-            >
-            <button
-                type="button"
-                class="cam-btn"
-                id="cam-btn"
-                title="Upload car image for AI recognition"
-                onclick="triggerFileSelect()"
-                aria-label="Upload car image"
-            >📷</button>
-            <input type="file" id="file-input" accept="image/*" style="display:none" aria-label="Car image file input">
-            <button type="submit" class="search-btn" id="search-btn">Search</button>
-        </form>
-
-        <!-- Image preview -->
-        <div class="img-preview-wrap" id="img-preview-wrap" role="status" aria-live="polite">
-            <img id="preview-thumb" class="preview-thumb" src="" alt="Selected car image preview">
-            <div class="preview-meta">
-                <span id="preview-name">car.jpg</span>
-                <small id="preview-size">Image selected</small>
-            </div>
-            <button class="remove-btn" onclick="clearImage()" type="button" aria-label="Remove selected image">✕ Remove</button>
+    <!-- Filter panel -->
+    <div class="filter-panel" id="filter-panel" role="region" aria-label="Search filters">
+      <div class="filter-grid">
+        <!-- Make -->
+        <div class="f-group">
+          <label class="f-label" for="f-make">Make</label>
+          <select class="f-select" id="f-make" onchange="updateModelOptions()">
+            <option value="">All Makes</option>
+            <option>Toyota</option><option>Kia</option><option>Hyundai</option>
+            <option>Mercedes</option><option>BMW</option><option>Nissan</option>
+            <option>Audi</option><option>Chevrolet</option><option>Renault</option>
+            <option>Peugeot</option><option>MG</option><option>Ford</option>
+            <option>Honda</option><option>Mazda</option><option>Mitsubishi</option>
+            <option>Volkswagen</option><option>Skoda</option><option>Fiat</option>
+            <option>Jeep</option><option>Suzuki</option><option>Opel</option>
+            <option>BYD</option><option>Chery</option>
+          </select>
         </div>
+        <!-- Model -->
+        <div class="f-group">
+          <label class="f-label" for="f-model">Model</label>
+          <select class="f-select" id="f-model">
+            <option value="">All Models</option>
+          </select>
+        </div>
+        <!-- Body type -->
+        <div class="f-group">
+          <label class="f-label" for="f-body">Body Type</label>
+          <select class="f-select" id="f-body">
+            <option value="">Any Type</option>
+            <option>Sedan</option><option>SUV</option><option>Hatchback</option>
+            <option>Coupe</option><option>Van</option><option>Pickup</option>
+          </select>
+        </div>
+        <!-- Year range -->
+        <div class="f-group">
+          <label class="f-label">Year Range</label>
+          <div class="f-range-row">
+            <input class="f-input" id="f-year-min" type="number" placeholder="From" min="1990" max="2027">
+            <span class="f-range-sep">–</span>
+            <input class="f-input" id="f-year-max" type="number" placeholder="To" min="1990" max="2027">
+          </div>
+        </div>
+        <!-- Price range -->
+        <div class="f-group">
+          <label class="f-label">Price (EGP)</label>
+          <div class="f-range-row">
+            <input class="f-input" id="f-price-min" type="number" placeholder="Min" min="0">
+            <span class="f-range-sep">–</span>
+            <input class="f-input" id="f-price-max" type="number" placeholder="Max" min="0">
+          </div>
+        </div>
+        <!-- Transmission -->
+        <div class="f-group">
+          <label class="f-label" for="f-trans">Transmission</label>
+          <select class="f-select" id="f-trans">
+            <option value="">Any</option>
+            <option>Automatic</option><option>Manual</option>
+          </select>
+        </div>
+        <!-- Mileage presets -->
+        <div class="f-group" style="grid-column:1/-1">
+          <label class="f-label">Mileage</label>
+          <div class="f-presets">
+            <button class="f-preset" data-preset="" type="button" onclick="setMileagePreset(this,'')">All</button>
+            <button class="f-preset" data-preset="zero" type="button" onclick="setMileagePreset(this,'zero')">0 km (Brand new)</button>
+            <button class="f-preset" data-preset="under_1000" type="button" onclick="setMileagePreset(this,'under_1000')">Under 1,000 km</button>
+            <button class="f-preset" data-preset="under_100000" type="button" onclick="setMileagePreset(this,'under_100000')">Under 100,000 km</button>
+            <button class="f-preset" data-preset="custom" type="button" onclick="setMileagePreset(this,'custom')">Custom range</button>
+          </div>
+          <div id="mileage-custom" style="display:none;margin-top:8px">
+            <div class="f-range-row">
+              <input class="f-input" id="f-km-min" type="number" placeholder="Min km" min="0">
+              <span class="f-range-sep">–</span>
+              <input class="f-input" id="f-km-max" type="number" placeholder="Max km" min="0">
+            </div>
+            <small style="color:#64748b;font-size:.71rem;margin-top:4px;display:block">ℹ Listings with unknown mileage are excluded from any mileage filter</small>
+          </div>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-clear" type="button" onclick="clearFilters()">✕ Clear all</button>
+        <button class="btn-apply" type="button" onclick="applyFilters()">Apply Filters</button>
+      </div>
     </div>
 
-    <!-- Detected badge -->
-    <div class="detected-wrap" id="detected-wrap" role="status" aria-live="polite">
-        <div class="detected-badge" id="detected-badge">📷 Detected: <strong id="detected-label">—</strong> <span id="detected-conf"></span></div>
-        <div class="detected-alts" id="detected-alts"></div>
+    <!-- Active filter chips -->
+    <div class="chips-row" id="chips-row"></div>
+  </div>
+
+  <!-- Image preview -->
+  <div class="img-preview-wrap" id="img-preview-wrap" role="status" aria-live="polite">
+    <img id="preview-thumb" class="preview-thumb" src="" alt="Selected car image preview">
+    <div class="preview-meta">
+      <span id="preview-name">car.jpg</span>
+      <small id="preview-size">Image selected</small>
     </div>
+    <button class="remove-btn" onclick="clearImage()" type="button" aria-label="Remove selected image">✕ Remove</button>
+  </div>
 
-    <!-- Spinner -->
-    <div class="spinner" id="spinner" role="status" aria-live="polite">⚡ <span id="spinner-text">Searching…</span></div>
-
-    <!-- Error -->
-    <div class="error-box" id="error-box" role="alert"></div>
-
-    <!-- Results header -->
-    <div class="results-hdr" id="results-hdr" aria-live="polite"></div>
-
-    <!-- Grid -->
-    <div class="grid" id="grid" role="list"></div>
-
-    <!-- Load more -->
-    <div class="load-more-wrap" id="load-more-wrap">
-        <button class="load-more-btn" id="load-more-btn" type="button" onclick="loadMore()">
-            Load More Vehicles 🚗
-        </button>
+  <!-- Analysis panel -->
+  <div class="analysis-panel" id="analysis-panel" role="status" aria-live="polite">
+    <div class="ap-header">
+      <div class="ap-icon">🔍</div>
+      <div class="ap-main">
+        <div class="ap-title">Vehicle Identification</div>
+        <div class="ap-detected">
+          <span class="ap-vehicle" id="ap-vehicle">—</span>
+          <span class="ap-conf" id="ap-conf"></span>
+        </div>
+        <div class="ap-note" id="ap-note"></div>
+        <div id="ap-alts-section" style="display:none">
+          <div class="ap-alts-label">Also possible — click to search instead:</div>
+          <div class="ap-alts" id="ap-alts"></div>
+        </div>
+        <div class="ap-correct">
+          <input class="ap-correct-input" id="ap-correct-input" type="text" placeholder="Correct the identification (e.g. 'Kia Sportage 2022')">
+          <button class="ap-correct-btn" type="button" onclick="correctSearch()">Search this ↗</button>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <!-- Empty state -->
-    <p class="empty" id="empty">
-        Type a car name above and press <strong>Enter</strong> — e.g. <em>Toyota Corolla</em>, <em>Kia Sportage</em>, <em>Mercedes C180</em> — or click <strong>📷</strong> to search by photo.
-    </p>
+  <!-- Spinner -->
+  <div class="spinner" id="spinner" role="status" aria-live="polite">⚡ <span id="spinner-text">Searching…</span></div>
+
+  <!-- Error -->
+  <div class="error-box" id="error-box" role="alert"></div>
+
+  <!-- Results header row -->
+  <div class="results-hdr-row" id="results-hdr-row">
+    <div class="results-hdr" id="results-hdr"></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span class="price-stat-pill" id="price-stat-pill" style="display:none"></span>
+      <button class="pdf-btn" id="pdf-btn" type="button" onclick="downloadPDF()">
+        ⬇ Download PDF report
+      </button>
+    </div>
+  </div>
+
+  <!-- Grid -->
+  <div class="grid" id="grid" role="list"></div>
+
+  <!-- Load more -->
+  <div class="load-more-wrap" id="load-more-wrap">
+    <button class="load-more-btn" id="load-more-btn" type="button" onclick="loadMore()">Load More Vehicles 🚗</button>
+  </div>
+
+  <!-- Empty -->
+  <p class="empty" id="empty">
+    Type a car name above and press <strong>Enter</strong> — e.g. <em>Toyota Corolla</em>, <em>Kia Sportage</em>, <em>Mercedes C180</em> — or click <strong>📷</strong> to search by photo.
+  </p>
 
 </main>
 
+<!-- Hidden PDF print area -->
+<div class="pdf-area" id="pdf-area" aria-hidden="true"></div>
+
 <script>
-/* ── State ───────────────────────────────────────────────────────────────── */
-let activeFile       = null;
-let reqCounter       = 0;       // incremented on each new top-level search; prevents stale results
-let currentQuery     = "";
-let currentPage      = 1;
-let totalLoaded      = 0;
-let loadedUrls       = new Set();
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  STATE                                                                      */
+/* ─────────────────────────────────────────────────────────────────────────── */
+let activeFile      = null;
+let reqCounter      = 0;
+let currentQuery    = "";
+let currentPage     = 1;
+let totalLoaded     = 0;
+let loadedUrls      = new Set();
+let activeFilters   = {};     // holds current applied filters
+let mileagePreset   = "";     // '', 'zero', 'under_1000', 'under_100000', 'custom'
+let lastPriceStats  = null;
+let lastAnalysis    = null;   // { label, confidence, note, alternatives }
+let allResults      = [];     // accumulates all loaded result objects for PDF
 
-/* ── DOM helpers ─────────────────────────────────────────────────────────── */
-const $   = id => document.getElementById(id);
-const show = (el, cls = null) => { if (cls) el.classList.add(cls); else el.style.display = 'block'; };
-const hide = (el, cls = null) => { if (cls) el.classList.remove(cls); else el.style.display = 'none'; };
-const vis  = (el, on) => on ? el.classList.add('visible') : el.classList.remove('visible');
+const MODEL_MAP = {
+  Toyota:["Corolla","Yaris","Camry","Fortuner","Hilux","Land Cruiser"],
+  Kia:["Cerato","Sportage","Picanto","Sorento","Stinger","Rio"],
+  Hyundai:["Elantra","Tucson","i10","i20","Accent","Santa Fe","Sonata"],
+  Mercedes:["C180","C200","E200","E350","CLA","GLC","A200"],
+  BMW:["316i","318i","320i","520i","X1","X3","M3"],
+  Nissan:["Sunny","Sentra","Qashqai","X-Trail","Micra"],
+  Audi:["A3","A4","A6","Q3","Q5","Q7"],
+  Chevrolet:["Optra","Cruze","Aveo","Spark","Trax","Captiva"],
+  Renault:["Megane","Symbol","Logan","Duster","Kadjar"],
+  Peugeot:["208","2008","301","3008","408","5008"],
+  MG:["MG5","MG6","ZS","HS","RX5"],
+  Ford:["Fiesta","Focus","EcoSport","Explorer","Ranger"],
+  Honda:["Civic","Accord","HR-V","CR-V","Jazz"],
+  Mazda:["Mazda3","Mazda6","CX-3","CX-5","MX-5"],
+  Mitsubishi:["Lancer","Eclipse","Outlander","ASX","Pajero"],
+  Volkswagen:["Polo","Golf","Passat","Tiguan","T-Roc"],
+  Skoda:["Octavia","Rapid","Fabia","Superb","Kodiaq"],
+  Fiat:["Punto","Tipo","500","Freemont"],
+  Jeep:["Compass","Renegade","Cherokee","Grand Cherokee","Wrangler"],
+  Suzuki:["Swift","Vitara","Baleno","Jimny","Ciaz"],
+  Opel:["Corsa","Astra","Zafira","Mokka"],
+  BYD:["Atto 3","Han","Tang","Dolphin","Seal"],
+  Chery:["Tiggo 4","Tiggo 7","Arrizo 5","Omoda 5"]
+};
 
-/* ── File picker ─────────────────────────────────────────────────────────── */
-function triggerFileSelect() {
-    $('file-input').click();
-}
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  DOM HELPERS                                                                */
+/* ─────────────────────────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+const vis  = (el, on) => { if(on) el.classList.add('visible'); else el.classList.remove('visible'); };
 
-$('file-input').addEventListener('change', function (e) {
-    const file = e.target.files[0];
-    if (!file) return;                          // cancel → ignore
-    if (!file.type.startsWith('image/')) {
-        setError('Selected file is not an image. Please choose a JPG or PNG.');
-        return;
-    }
-    activeFile = file;
-    showPreview(file);
-    classifyImage(file);
+function setSpinner(text){ $('spinner-text').textContent = text; vis($('spinner'), true); }
+function hideSpinner(){ vis($('spinner'), false); }
+function setError(msg){ const e=$('error-box'); e.textContent=msg; vis(e,true); hideSpinner(); }
+function clearError(){ const e=$('error-box'); e.textContent=''; vis(e,false); }
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  FILE PICKER                                                                */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function triggerFileSelect(){ $('file-input').click(); }
+
+$('file-input').addEventListener('change', function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ setError('Selected file is not an image. Please choose a JPG or PNG.'); return; }
+  activeFile = file;
+  showPreview(file);
+  classifyImage(file);
 });
 
-function showPreview(file) {
-    $('preview-name').textContent = file.name;
-    $('preview-size').textContent = `${(file.size / 1024).toFixed(1)} KB`;
-    const reader = new FileReader();
-    reader.onload = ev => {
-        $('preview-thumb').src = ev.target.result;
-        vis($('img-preview-wrap'), true);
-    };
-    reader.readAsDataURL(file);
+function showPreview(file){
+  $('preview-name').textContent = file.name;
+  $('preview-size').textContent = `${(file.size/1024).toFixed(1)} KB`;
+  const reader = new FileReader();
+  reader.onload = ev => { $('preview-thumb').src = ev.target.result; vis($('img-preview-wrap'),true); };
+  reader.readAsDataURL(file);
 }
 
-function clearImage() {
-    activeFile = null;
-    $('file-input').value = '';
-    vis($('img-preview-wrap'), false);
-    vis($('detected-wrap'), false);
-    clearError();
+function clearImage(){
+  activeFile = null;
+  $('file-input').value = '';
+  vis($('img-preview-wrap'),false);
+  vis($('analysis-panel'),false);
+  lastAnalysis = null;
+  clearError();
 }
 
-/* ── Error / spinner helpers ─────────────────────────────────────────────── */
-function setError(msg) {
-    const el = $('error-box');
-    el.textContent = msg;
-    vis(el, true);
-    vis($('spinner'), false);
-}
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  IMAGE CLASSIFICATION                                                       */
+/* ─────────────────────────────────────────────────────────────────────────── */
+async function classifyImage(file){
+  clearError();
+  const myReq = ++reqCounter;
 
-function clearError() {
-    const el = $('error-box');
-    el.textContent = '';
-    vis(el, false);
-}
+  vis($('analysis-panel'), false);
+  vis($('results-hdr-row'), false);
+  $('grid').innerHTML = '';
+  vis($('load-more-wrap'), false);
+  $('empty').style.display = 'none';
+  allResults = [];
 
-function setSpinner(text) {
-    $('spinner-text').textContent = text;
-    vis($('spinner'), true);
-}
+  setSpinner('Analyzing vehicle image with Vision AI…');
 
-function hideSpinner() {
-    vis($('spinner'), false);
-}
+  const fd = new FormData();
+  fd.append('image', file);
 
-/* ── Image classification ────────────────────────────────────────────────── */
-async function classifyImage(file) {
-    clearError();
-    const myReq = ++reqCounter;
+  try{
+    const resp = await fetch('/api/classify', { method:'POST', body:fd });
+    if(myReq !== reqCounter) return;
+    const data = await resp.json();
 
-    vis($('detected-wrap'), false);
-    vis($('results-hdr'), false);
-    $('grid').innerHTML = '';
-    vis($('load-more-wrap'), false);
-    $('empty').style.display = 'none';
-
-    setSpinner('Analyzing vehicle image with Vision AI…');
-
-    const fd = new FormData();
-    fd.append('image', file);
-
-    try {
-        const resp = await fetch('/api/classify', { method: 'POST', body: fd });
-        if (myReq !== reqCounter) return;       // superseded
-
-        const data = await resp.json();
-
-        if (resp.ok && data.success && data.label) {
-            const label = data.label;
-            const conf  = data.confidence ? ` (${data.confidence}%)` : '';
-
-            $('detected-label').textContent = label;
-            $('detected-conf').textContent  = conf;
-            vis($('detected-wrap'), true);
-
-            // Alternative suggestions
-            const altsEl = $('detected-alts');
-            altsEl.innerHTML = '';
-            if (data.alternatives && data.alternatives.length > 0) {
-                const intro = document.createElement('span');
-                intro.style.cssText = 'color:#64748b;font-size:.72rem;margin-right:4px;';
-                intro.textContent = 'Also possible:';
-                altsEl.appendChild(intro);
-                data.alternatives.forEach(alt => {
-                    const pill = document.createElement('button');
-                    pill.className = 'alt-pill';
-                    pill.type = 'button';
-                    pill.textContent = `${alt.label} (${alt.confidence}%)`;
-                    pill.addEventListener('click', () => {
-                        $('search-input').value = alt.label;
-                        initiateSearch(alt.label);
-                    });
-                    altsEl.appendChild(pill);
-                });
-            }
-
-            $('search-input').value = label;
-            initiateSearch(label, myReq);
-            return;
-        }
-
-        // 503 = model loading
-        if (resp.status === 503 && data.retry) {
-            setError(`⏳ ${data.error} — you can also type a search above.`);
-            return;
-        }
-
-        // Classification not confident
-        hideSpinner();
-        setError(`⚠️ ${data.error || 'Could not identify vehicle. Try a clearer exterior photo or type a search.'}`);
-
-    } catch (err) {
-        if (myReq !== reqCounter) return;
-        hideSpinner();
-        setError('⚠️ Vision API unreachable. Please type your search query above.');
-    }
-}
-
-/* ── Text search entry point ─────────────────────────────────────────────── */
-function initiateSearch(queryText, inheritedReq = null) {
-    const query = (queryText !== undefined && queryText !== null
-        ? queryText
-        : $('search-input').value
-    ).trim();
-
-    if (!query) {
-        $('empty').style.display = 'block';
-        return;
+    if(resp.ok && data.success && data.label){
+      lastAnalysis = data;
+      showAnalysisPanel(data);
+      $('search-input').value = data.label;
+      initiateSearch(data.label, myReq);
+      return;
     }
 
-    currentQuery  = query;
-    currentPage   = 1;
-    totalLoaded   = 0;
-    loadedUrls    = new Set();
-    $('grid').innerHTML = '';
-
-    const myReq = inheritedReq !== null ? inheritedReq : ++reqCounter;
-    fetchResults(query, 1, false, myReq);
-}
-
-function loadMore() {
-    if (!currentQuery) return;
-    currentPage++;
-    const myReq = ++reqCounter;
-    fetchResults(currentQuery, currentPage, true, myReq);
-}
-
-/* ── Core fetch ──────────────────────────────────────────────────────────── */
-async function fetchResults(query, page, append, myReq) {
-    clearError();
-    const grid        = $('grid');
-    const hdr         = $('results-hdr');
-    const loadWrap    = $('load-more-wrap');
-    const empty       = $('empty');
-
-    if (!append) {
-        setSpinner('Searching live market listings…');
-        vis(hdr, false);
-        vis(loadWrap, false);
-        empty.style.display = 'none';
-    } else {
-        $('load-more-btn').textContent = '⚡ Loading…';
+    if(resp.status === 503 && data.retry){
+      setError(`⏳ ${data.error} — you can also type a search above.`);
+      return;
     }
 
-    try {
-        const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}&page=${page}`);
-        if (!append && myReq !== reqCounter) return;    // superseded
-
-        const data = await resp.json();
-
-        hideSpinner();
-        $('load-more-btn').textContent = 'Load More Vehicles 🚗';
-
-        if (!data.results || data.results.length === 0) {
-            if (!append) {
-                vis(hdr, false);
-                grid.innerHTML = '';
-                vis(loadWrap, false);
-                empty.textContent = `No listings found for "${query}". Try a different make or model.`;
-                empty.style.display = 'block';
-            } else {
-                vis(loadWrap, false);
-            }
-            return;
-        }
-
-        // Deduplicate
-        const fresh = data.results.filter(r => {
-            const key = r.item_url || r.name;
-            if (loadedUrls.has(key)) return false;
-            loadedUrls.add(key);
-            return true;
-        });
-
-        totalLoaded += fresh.length;
-
-        hdr.textContent = `🎯 Live results for "${data.query || query}" — ${totalLoaded} vehicle${totalLoaded !== 1 ? 's' : ''} loaded`;
-        vis(hdr, true);
-
-        fresh.forEach(r => grid.appendChild(buildCard(r)));
-
-        vis(loadWrap, data.has_more && fresh.length > 0);
-
-    } catch (err) {
-        if (!append && myReq !== reqCounter) return;
-        hideSpinner();
-        $('load-more-btn').textContent = 'Load More Vehicles 🚗';
-        setError('⚠️ Failed to load results. Please check your connection and try again.');
-    }
+    hideSpinner();
+    setError(`⚠️ ${data.error || 'Could not identify vehicle. Try a clearer exterior photo or type a search.'}`);
+  } catch(err){
+    if(myReq !== reqCounter) return;
+    hideSpinner();
+    setError('⚠️ Vision API unreachable. Please type your search query above.');
+  }
 }
 
-/* ── Card builder ────────────────────────────────────────────────────────── */
-function buildCard(r) {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.setAttribute('role', 'listitem');
+function showAnalysisPanel(data){
+  $('ap-vehicle').textContent = data.label;
+  $('ap-conf').textContent = data.confidence ? `${data.confidence}% confidence` : '';
+  $('ap-note').textContent = data.note || 'Year, trim, and mechanical condition cannot be determined from appearance alone. Asking prices are not completed-sale prices.';
+  $('ap-correct-input').value = data.label;
 
-    // ── Gallery ──────────────────────────────────────────────────────────────
-    const photos = [];
-    if (r.image_url) photos.push(r.image_url);
-    // Future: if API returns image_urls[] add them here
-    // if (r.image_urls) photos.push(...r.image_urls.slice(0, 3));
+  const altsEl = $('ap-alts');
+  altsEl.innerHTML = '';
+  const altsSection = $('ap-alts-section');
 
-    card.appendChild(buildGallery(photos, r.name, r.item_url));
+  if(data.alternatives && data.alternatives.length > 0){
+    data.alternatives.forEach(alt => {
+      const pill = document.createElement('button');
+      pill.className = 'alt-pill';
+      pill.type = 'button';
+      pill.textContent = `${alt.label} (${alt.confidence}%)`;
+      pill.addEventListener('click', () => {
+        $('search-input').value = alt.label;
+        $('ap-correct-input').value = alt.label;
+        initiateSearch(alt.label);
+      });
+      altsEl.appendChild(pill);
+    });
+    altsSection.style.display = 'block';
+  } else {
+    altsSection.style.display = 'none';
+  }
 
-    // ── Deal badge ───────────────────────────────────────────────────────────
-    let badgeHtml = '';
-    if (r.deal_label) {
-        if (r.deal_label.includes('Great Deal'))       badgeHtml = '<span class="badge badge-great">🟢 Great Deal</span>';
-        else if (r.deal_label.includes('Overpriced'))  badgeHtml = '<span class="badge badge-over">🔴 Overpriced</span>';
-        else if (r.deal_label.includes('Fair Market')) badgeHtml = '<span class="badge badge-fair">⚖️ Fair Price</span>';
-    }
-
-    // ── Mileage ──────────────────────────────────────────────────────────────
-    let mileageText = '—';
-    if (r.mileage === 0)              mileageText = '0 km';
-    else if (r.mileage > 0)          mileageText = `${Number(r.mileage).toLocaleString()} km`;
-
-    // ── Price ─────────────────────────────────────────────────────────────────
-    const priceText = (r.price && r.price > 0)
-        ? `<span class="price-val">${Number(r.price).toLocaleString()} EGP</span>`
-        : `<span class="price-val missing">Not listed</span>`;
-
-    // ── Estimate ──────────────────────────────────────────────────────────────
-    const estLabel = r.valuation_source === 'CatBoost' ? 'AI Estimate (CatBoost)' : 'Est. (rule-based)';
-    const estHtml = (r.predicted_fair_price && r.predicted_fair_price > 0)
-        ? `<span class="est-val">${Number(r.predicted_fair_price).toLocaleString()} EGP</span>`
-        : `<span class="est-val na">Not assessed</span>`;
-
-    // ── Match score ───────────────────────────────────────────────────────────
-    const matchHtml = (r.match_score !== null && r.match_score !== undefined)
-        ? `<span>⚡ ${r.match_score}%</span>`
-        : '';
-
-    // ── View button ───────────────────────────────────────────────────────────
-    const btnHtml = r.has_valid_url && r.item_url
-        ? `<a href="${r.item_url}" target="_blank" rel="noopener noreferrer" class="view-btn">View Full Listing ↗</a>`
-        : `<span class="view-btn disabled" aria-disabled="true">Listing unavailable</span>`;
-
-    card.innerHTML += `
-        <div class="card-body">
-            <div class="card-title-row">
-                <h2 class="card-title">${escHtml(r.name)}</h2>
-                ${badgeHtml}
-            </div>
-            <div class="specs">
-                ${r.year ? `<span>📅 ${r.year}</span>` : ''}
-                <span>⚙️ ${escHtml(r.transmission)}</span>
-                <span>🛣️ ${mileageText}</span>
-                <span>📍 ${escHtml(r.location)}</span>
-                ${matchHtml}
-            </div>
-            <div class="price-area">
-                <div>
-                    <span class="price-label">Listed Price</span>
-                    ${priceText}
-                </div>
-                <div style="text-align:right">
-                    <span class="price-label">${estLabel}</span>
-                    ${estHtml}
-                </div>
-            </div>
-            ${btnHtml}
-        </div>
-    `;
-
-    return card;
+  vis($('analysis-panel'), true);
 }
 
-/* ── Gallery builder ─────────────────────────────────────────────────────── */
-function buildGallery(photos, name, listingUrl) {
-    const wrap = document.createElement('div');
-    wrap.className = 'gallery';
+function correctSearch(){
+  const val = $('ap-correct-input').value.trim();
+  if(!val) return;
+  $('search-input').value = val;
+  initiateSearch(val);
+}
 
-    if (!photos.length) {
-        wrap.innerHTML = `
-            <div class="no-photo">
-                <svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                        d="M4 16l4-4 4 4 4-6 4 6M3 20h18V4H3v16z"/>
-                </svg>
-                Photo unavailable
-            </div>`;
-        return wrap;
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  FILTER MANAGEMENT                                                          */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function toggleFilters(){
+  const panel = $('filter-panel');
+  const btn   = $('filter-toggle');
+  const open  = panel.classList.toggle('open');
+  btn.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open);
+}
+
+function setMileagePreset(el, preset){
+  document.querySelectorAll('.f-preset').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  mileagePreset = preset;
+  $('mileage-custom').style.display = preset === 'custom' ? 'block' : 'none';
+}
+
+function updateModelOptions(){
+  const make = $('f-make').value;
+  const sel  = $('f-model');
+  sel.innerHTML = '<option value="">All Models</option>';
+  if(make && MODEL_MAP[make]){
+    MODEL_MAP[make].forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      sel.appendChild(opt);
+    });
+  }
+}
+
+function buildFilterParams(){
+  const p = {};
+  const make    = $('f-make').value;
+  const model   = $('f-model').value;
+  const body    = $('f-body').value;
+  const yMin    = $('f-year-min').value;
+  const yMax    = $('f-year-max').value;
+  const pMin    = $('f-price-min').value;
+  const pMax    = $('f-price-max').value;
+  const trans   = $('f-trans').value;
+  const kmMin   = $('f-km-min').value;
+  const kmMax   = $('f-km-max').value;
+
+  if(mileagePreset && mileagePreset !== 'custom') p.mileage_preset = mileagePreset;
+  if(mileagePreset === 'custom'){
+    if(kmMin) p.min_mileage = kmMin;
+    if(kmMax) p.max_mileage = kmMax;
+  }
+  if(yMin)  p.min_year   = yMin;
+  if(yMax)  p.max_year   = yMax;
+  if(pMin)  p.min_price  = pMin;
+  if(pMax)  p.max_price  = pMax;
+  if(trans) p.transmission = trans;
+  if(body)  p.body_type  = body;
+  return p;
+}
+
+function applyFilters(){
+  activeFilters = buildFilterParams();
+  // If make is selected, update the search query
+  const make  = $('f-make').value;
+  const model = $('f-model').value;
+  if(make){
+    const q = model ? `${make} ${model}` : make;
+    $('search-input').value = q;
+    currentQuery = q;
+  }
+  renderChips();
+  // Reset pagination
+  currentPage  = 1;
+  totalLoaded  = 0;
+  loadedUrls   = new Set();
+  allResults   = [];
+  $('grid').innerHTML = '';
+  fetchResults(currentQuery || $('search-input').value.trim(), 1, false, ++reqCounter);
+}
+
+function clearFilters(){
+  activeFilters = {};
+  mileagePreset = '';
+  ['f-make','f-model','f-body','f-trans'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  ['f-year-min','f-year-max','f-price-min','f-price-max','f-km-min','f-km-max'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  document.querySelectorAll('.f-preset').forEach(b=>b.classList.remove('active'));
+  $('mileage-custom').style.display = 'none';
+  renderChips();
+  updateFilterBadge(0);
+  // Refresh results without filters
+  if(currentQuery){
+    currentPage=1; totalLoaded=0; loadedUrls=new Set(); allResults=[]; $('grid').innerHTML='';
+    fetchResults(currentQuery, 1, false, ++reqCounter);
+  }
+}
+
+function removeFilter(key){
+  delete activeFilters[key];
+  // Also clear UI
+  const map = { min_price:'f-price-min', max_price:'f-price-max', min_year:'f-year-min', max_year:'f-year-max', transmission:'f-trans', body_type:'f-body', min_mileage:'f-km-min', max_mileage:'f-km-max' };
+  if(map[key]){ const el=$(map[key]); if(el) el.value=''; }
+  if(key === 'mileage_preset'){
+    mileagePreset='';
+    document.querySelectorAll('.f-preset').forEach(b=>b.classList.remove('active'));
+  }
+  renderChips();
+  currentPage=1; totalLoaded=0; loadedUrls=new Set(); allResults=[]; $('grid').innerHTML='';
+  fetchResults(currentQuery, 1, false, ++reqCounter);
+}
+
+const CHIP_LABELS = {
+  mileage_preset: v => ({ zero:'0 km only', under_1000:'< 1,000 km', under_100000:'< 100,000 km' }[v] || v),
+  min_price:  v => `Min ${Number(v).toLocaleString()} EGP`,
+  max_price:  v => `Max ${Number(v).toLocaleString()} EGP`,
+  min_year:   v => `From ${v}`,
+  max_year:   v => `To ${v}`,
+  transmission: v => v,
+  body_type:  v => v,
+  min_mileage: v => `Min ${Number(v).toLocaleString()} km`,
+  max_mileage: v => `Max ${Number(v).toLocaleString()} km`,
+};
+
+function renderChips(){
+  const row = $('chips-row');
+  row.innerHTML = '';
+  let count = 0;
+  Object.entries(activeFilters).forEach(([key, val]) => {
+    if(!val) return;
+    count++;
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    const labelFn = CHIP_LABELS[key];
+    chip.innerHTML = `${labelFn ? labelFn(val) : `${key}: ${val}`} <button class="chip-x" title="Remove filter" aria-label="Remove ${key} filter">✕</button>`;
+    chip.querySelector('.chip-x').addEventListener('click', () => removeFilter(key));
+    row.appendChild(chip);
+  });
+  updateFilterBadge(count);
+}
+
+function updateFilterBadge(count){
+  const badge = $('filter-badge');
+  if(count > 0){ badge.textContent = count; badge.style.display='inline-flex'; }
+  else          { badge.style.display='none'; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  SEARCH                                                                     */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function initiateSearch(queryText, inheritedReq=null){
+  const query = (queryText !== undefined && queryText !== null ? queryText : $('search-input').value).trim();
+  if(!query){ $('empty').style.display='block'; return; }
+  currentQuery = query;
+  currentPage  = 1;
+  totalLoaded  = 0;
+  loadedUrls   = new Set();
+  allResults   = [];
+  $('grid').innerHTML = '';
+  const myReq = inheritedReq !== null ? inheritedReq : ++reqCounter;
+  fetchResults(query, 1, false, myReq);
+}
+
+function loadMore(){
+  if(!currentQuery) return;
+  currentPage++;
+  fetchResults(currentQuery, currentPage, true, ++reqCounter);
+}
+
+function buildSearchURL(query, page){
+  const url = new URL('/api/search', window.location.origin);
+  url.searchParams.set('q', query);
+  url.searchParams.set('page', page);
+  Object.entries(activeFilters).forEach(([k,v]) => { if(v) url.searchParams.set(k, v); });
+  return url.toString();
+}
+
+async function fetchResults(query, page, append, myReq){
+  clearError();
+  const grid      = $('grid');
+  const hdrRow    = $('results-hdr-row');
+  const hdr       = $('results-hdr');
+  const loadWrap  = $('load-more-wrap');
+  const empty     = $('empty');
+
+  if(!query){ empty.style.display='block'; return; }
+
+  if(!append){
+    setSpinner('Searching live market listings…');
+    vis(hdrRow,false); vis(loadWrap,false);
+    empty.style.display='none';
+  } else {
+    $('load-more-btn').textContent = '⚡ Loading…';
+  }
+
+  try{
+    const resp = await fetch(buildSearchURL(query, page));
+    if(!append && myReq !== reqCounter) return;
+
+    const data = await resp.json();
+    hideSpinner();
+    $('load-more-btn').textContent = 'Load More Vehicles 🚗';
+
+    if(!data.results || data.results.length === 0){
+      if(!append){
+        vis(hdrRow,false); grid.innerHTML=''; vis(loadWrap,false);
+        const filterNote = Object.keys(activeFilters).length ? ' with the current filters' : '';
+        empty.textContent = `No listings found for "${query}"${filterNote}. Try adjusting your search or filters.`;
+        empty.style.display = 'block';
+      } else {
+        vis(loadWrap,false);
+      }
+      return;
     }
 
-    // Build slides (max 3 real photos)
-    const realSlides = photos.slice(0, 3);
-    const hasMore    = listingUrl; // show "view full listing" panel after real slides
-
-    const track = document.createElement('div');
-    track.className = 'gallery-track';
-
-    realSlides.forEach((src, i) => {
-        const slide = document.createElement('div');
-        slide.className = 'gallery-slide';
-        const img = document.createElement('img');
-        img.className = 'gallery-img';
-        img.alt = `${name} photo ${i + 1}`;
-        img.loading = 'lazy';
-        img.src = src;
-        img.onerror = () => {
-            slide.innerHTML = `<div class="no-photo"><svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4-4 4 4 4-6 4 6M3 20h18V4H3v16z"/></svg>Photo unavailable</div>`;
-        };
-        slide.appendChild(img);
-        track.appendChild(slide);
+    // Deduplicate
+    const fresh = data.results.filter(r => {
+      const key = r.item_url || r.name;
+      if(loadedUrls.has(key)) return false;
+      loadedUrls.add(key);
+      return true;
     });
 
-    // "View full listing" blurred panel
-    if (hasMore) {
-        const moreSlide = document.createElement('div');
-        moreSlide.className = 'gallery-more-slide';
-        if (realSlides.length > 0) {
-            // Blurred last photo as background
-            const bgImg = document.createElement('img');
-            bgImg.className = 'gallery-img';
-            bgImg.style.cssText = 'position:absolute;inset:0;filter:blur(8px);transform:scale(1.08);object-fit:cover;width:100%;height:100%;';
-            bgImg.src = realSlides[realSlides.length - 1];
-            bgImg.alt = '';
-            bgImg.setAttribute('aria-hidden', 'true');
-            moreSlide.appendChild(bgImg);
-        }
-        moreSlide.innerHTML += `
-            <div class="gallery-more-label">
-                🖼️ More photos available
-                <small>View full listing ↗</small>
-            </div>`;
-        if (listingUrl) {
-            moreSlide.addEventListener('click', () => window.open(listingUrl, '_blank', 'noopener,noreferrer'));
-        }
-        track.appendChild(moreSlide);
+    totalLoaded += fresh.length;
+    allResults.push(...fresh);
+
+    hdr.textContent = `🎯 Results for "${data.query || query}" — ${totalLoaded} vehicle${totalLoaded!==1?'s':''} loaded`;
+    vis(hdrRow,true);
+
+    // Price stats
+    lastPriceStats = data.price_stats;
+    const pill = $('price-stat-pill');
+    if(data.price_stats && data.price_stats.count > 1){
+      pill.textContent = `💰 ${Number(data.price_stats.min).toLocaleString()} – ${Number(data.price_stats.max).toLocaleString()} EGP`;
+      pill.style.display = 'inline-block';
+    } else {
+      pill.style.display = 'none';
     }
 
-    wrap.appendChild(track);
+    fresh.forEach(r => grid.appendChild(buildCard(r)));
+    vis(loadWrap, data.has_more && fresh.length > 0);
 
-    const totalSlides = realSlides.length + (hasMore ? 1 : 0);
-
-    // Arrows (only if >1 slide)
-    if (totalSlides > 1) {
-        const prevBtn = document.createElement('button');
-        prevBtn.className = 'gallery-arrow prev';
-        prevBtn.type = 'button';
-        prevBtn.setAttribute('aria-label', 'Previous photo');
-        prevBtn.textContent = '‹';
-        prevBtn.hidden = true;
-        wrap.appendChild(prevBtn);
-
-        const nextBtn = document.createElement('button');
-        nextBtn.className = 'gallery-arrow next';
-        nextBtn.type = 'button';
-        nextBtn.setAttribute('aria-label', 'Next photo');
-        nextBtn.textContent = '›';
-        wrap.appendChild(nextBtn);
-
-        // Dots
-        const dotsEl = document.createElement('div');
-        dotsEl.className = 'gallery-dots';
-        const dots = [];
-        for (let i = 0; i < totalSlides; i++) {
-            const d = document.createElement('div');
-            d.className = 'gallery-dot' + (i === 0 ? ' active' : '');
-            dotsEl.appendChild(d);
-            dots.push(d);
-        }
-        wrap.appendChild(dotsEl);
-
-        let cur = 0;
-
-        function goTo(idx) {
-            cur = Math.max(0, Math.min(idx, totalSlides - 1));
-            track.style.transform = `translateX(-${cur * 100}%)`;
-            dots.forEach((d, i) => d.classList.toggle('active', i === cur));
-            prevBtn.hidden = cur === 0;
-            nextBtn.hidden = cur === totalSlides - 1;
-        }
-
-        prevBtn.addEventListener('click', e => { e.stopPropagation(); goTo(cur - 1); });
-        nextBtn.addEventListener('click', e => { e.stopPropagation(); goTo(cur + 1); });
-
-        // Touch swipe
-        let touchStartX = null;
-        wrap.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
-        wrap.addEventListener('touchend', e => {
-            if (touchStartX === null) return;
-            const dx = e.changedTouches[0].clientX - touchStartX;
-            if (Math.abs(dx) > 32) goTo(dx < 0 ? cur + 1 : cur - 1);
-            touchStartX = null;
-        }, { passive: true });
-
-        goTo(0);
-    }
-
-    return wrap;
+  } catch(err){
+    if(!append && myReq !== reqCounter) return;
+    hideSpinner();
+    $('load-more-btn').textContent = 'Load More Vehicles 🚗';
+    setError('⚠️ Failed to load results. Please check your connection and try again.');
+  }
 }
 
-/* ── Utility ─────────────────────────────────────────────────────────────── */
-function escHtml(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  CARD BUILDER                                                               */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function buildCard(r){
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.setAttribute('role','listitem');
+  card.appendChild(buildGallery([r.image_url].filter(Boolean), r.name, r.item_url));
+
+  let badgeHtml = '';
+  if(r.deal_label){
+    if(r.deal_label.includes('Great Deal'))       badgeHtml = '<span class="badge badge-great">🟢 Great Deal</span>';
+    else if(r.deal_label.includes('Overpriced'))  badgeHtml = '<span class="badge badge-over">🔴 Overpriced</span>';
+    else if(r.deal_label.includes('Fair Market')) badgeHtml = '<span class="badge badge-fair">⚖️ Fair Price</span>';
+  }
+
+  let mileageText = '—';
+  if(r.mileage === 0)       mileageText = '0 km';
+  else if(r.mileage > 0)    mileageText = `${Number(r.mileage).toLocaleString()} km`;
+
+  const priceHtml = (r.price && r.price > 0)
+    ? `<span class="price-val">${Number(r.price).toLocaleString()} EGP</span>`
+    : `<span class="price-val missing">Not listed</span>`;
+
+  const estSource = r.valuation_source === 'CatBoost' ? 'AI Estimate (CatBoost)' : 'Est. (rule-based)';
+  const estHtml = (r.predicted_fair_price && r.predicted_fair_price > 0)
+    ? `<span class="est-val">${Number(r.predicted_fair_price).toLocaleString()} EGP</span>`
+    : `<span class="est-val na">Not assessed</span>`;
+
+  const matchHtml = (r.match_score !== null && r.match_score !== undefined)
+    ? `<span>⚡ ${r.match_score}%</span>` : '';
+
+  const btnHtml = r.has_valid_url && r.item_url
+    ? `<a href="${r.item_url}" target="_blank" rel="noopener noreferrer" class="view-btn">View Full Listing ↗</a>`
+    : `<span class="view-btn disabled" aria-disabled="true">Listing unavailable</span>`;
+
+  card.innerHTML += `
+    <div class="card-body">
+      <div class="card-title-row">
+        <h2 class="card-title">${esc(r.name)}</h2>
+        ${badgeHtml}
+      </div>
+      <div class="specs">
+        ${r.year ? `<span>📅 ${r.year}</span>` : ''}
+        <span>⚙️ ${esc(r.transmission)}</span>
+        <span>🛣️ ${mileageText}</span>
+        <span>📍 ${esc(r.location)}</span>
+        ${matchHtml}
+      </div>
+      <div class="price-area">
+        <div>
+          <span class="price-label">Listed Price</span>
+          ${priceHtml}
+        </div>
+        <div style="text-align:right">
+          <span class="price-label">${estSource}</span>
+          ${estHtml}
+        </div>
+      </div>
+      ${btnHtml}
+    </div>`;
+
+  return card;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  GALLERY BUILDER                                                            */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function buildGallery(photos, name, listingUrl){
+  const wrap = document.createElement('div');
+  wrap.className = 'gallery';
+
+  if(!photos.length){
+    wrap.innerHTML = `<div class="no-photo"><svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4-4 4 4 4-6 4 6M3 20h18V4H3v16z"/></svg>Photo unavailable</div>`;
+    return wrap;
+  }
+
+  const realSlides = photos.slice(0,3);
+  const track = document.createElement('div');
+  track.className = 'gallery-track';
+
+  realSlides.forEach((src,i) => {
+    const slide = document.createElement('div');
+    slide.className = 'gallery-slide';
+    const img = document.createElement('img');
+    img.className = 'gallery-img';
+    img.alt = `${name} photo ${i+1}`;
+    img.loading = 'lazy';
+    img.src = src;
+    img.onerror = () => {
+      slide.innerHTML = `<div class="no-photo"><svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4-4 4 4 4-6 4 6M3 20h18V4H3v16z"/></svg>Photo unavailable</div>`;
+    };
+    slide.appendChild(img);
+    track.appendChild(slide);
+  });
+
+  if(listingUrl){
+    const moreSlide = document.createElement('div');
+    moreSlide.className = 'gallery-more-slide';
+    if(realSlides.length){
+      const bgImg = document.createElement('img');
+      bgImg.className = 'gallery-img';
+      bgImg.style.cssText='position:absolute;inset:0;filter:blur(8px);transform:scale(1.08);object-fit:cover;width:100%;height:100%;';
+      bgImg.src = realSlides[realSlides.length-1];
+      bgImg.alt='';
+      bgImg.setAttribute('aria-hidden','true');
+      moreSlide.appendChild(bgImg);
+    }
+    moreSlide.innerHTML += `<div class="gallery-more-label">🖼️ More photos available<small>View full listing ↗</small></div>`;
+    moreSlide.addEventListener('click', () => window.open(listingUrl,'_blank','noopener,noreferrer'));
+    track.appendChild(moreSlide);
+  }
+
+  wrap.appendChild(track);
+  const totalSlides = realSlides.length + (listingUrl ? 1 : 0);
+
+  if(totalSlides > 1){
+    const prevBtn = document.createElement('button');
+    prevBtn.className='gallery-arrow prev'; prevBtn.type='button';
+    prevBtn.setAttribute('aria-label','Previous photo'); prevBtn.textContent='‹'; prevBtn.hidden=true;
+    wrap.appendChild(prevBtn);
+    const nextBtn = document.createElement('button');
+    nextBtn.className='gallery-arrow next'; nextBtn.type='button';
+    nextBtn.setAttribute('aria-label','Next photo'); nextBtn.textContent='›';
+    wrap.appendChild(nextBtn);
+
+    const dotsEl = document.createElement('div');
+    dotsEl.className = 'gallery-dots';
+    const dots = [];
+    for(let i=0;i<totalSlides;i++){
+      const d=document.createElement('div');
+      d.className='gallery-dot'+(i===0?' active':'');
+      dotsEl.appendChild(d); dots.push(d);
+    }
+    wrap.appendChild(dotsEl);
+
+    let cur=0;
+    function goTo(idx){
+      cur=Math.max(0,Math.min(idx,totalSlides-1));
+      track.style.transform=`translateX(-${cur*100}%)`;
+      dots.forEach((d,i)=>d.classList.toggle('active',i===cur));
+      prevBtn.hidden=cur===0; nextBtn.hidden=cur===totalSlides-1;
+    }
+    prevBtn.addEventListener('click',e=>{e.stopPropagation();goTo(cur-1);});
+    nextBtn.addEventListener('click',e=>{e.stopPropagation();goTo(cur+1);});
+    let tsx=null;
+    wrap.addEventListener('touchstart',e=>{tsx=e.touches[0].clientX;},{passive:true});
+    wrap.addEventListener('touchend',e=>{if(tsx===null)return;const dx=e.changedTouches[0].clientX-tsx;if(Math.abs(dx)>32)goTo(dx<0?cur+1:cur-1);tsx=null;},{passive:true});
+    goTo(0);
+  }
+
+  return wrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  PDF EXPORT                                                                 */
+/* ─────────────────────────────────────────────────────────────────────────── */
+async function downloadPDF(){
+  const btn = $('pdf-btn');
+  btn.classList.add('loading');
+  btn.textContent = '⏳ Generating PDF…';
+
+  try{
+    await buildPDFArea();
+    const pdfArea = $('pdf-area');
+    pdfArea.style.left = '0';
+    pdfArea.style.top  = '0';
+    pdfArea.style.zIndex = '-1';
+
+    const canvas = await html2canvas(pdfArea, {
+      scale: 1.6,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      width: 960,
+      windowWidth: 960
+    });
+
+    pdfArea.style.left = '-9999px';
+    pdfArea.style.zIndex = '';
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
+
+    const pageW  = pdf.internal.pageSize.getWidth();
+    const pageH  = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    const usableW = pageW - margin*2;
+
+    const imgData  = canvas.toDataURL('image/jpeg', 0.92);
+    const imgRatio = canvas.height / canvas.width;
+    const imgH     = usableW * imgRatio;
+
+    let yPos = margin;
+    let remainingH = imgH;
+    let srcY = 0;
+
+    while(remainingH > 0){
+      const sliceH = Math.min(remainingH, pageH - margin*2);
+      const sliceRatio = sliceH / imgH;
+      const srcSliceH  = sliceRatio * canvas.height;
+
+      const sliceCanvas = document.createElement('canvas');
+      sliceCanvas.width  = canvas.width;
+      sliceCanvas.height = srcSliceH;
+      const ctx = sliceCanvas.getContext('2d');
+      ctx.drawImage(canvas, 0, srcY, canvas.width, srcSliceH, 0, 0, canvas.width, srcSliceH);
+
+      const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
+      pdf.addImage(sliceData,'JPEG', margin, yPos, usableW, sliceH);
+
+      remainingH -= sliceH;
+      srcY       += srcSliceH;
+
+      if(remainingH > 0){
+        pdf.addPage();
+        yPos = margin;
+      }
+    }
+
+    const filename = `apex-motors-${currentQuery.replace(/\s+/g,'-').toLowerCase()}-${new Date().toISOString().slice(0,10)}.pdf`;
+    pdf.save(filename);
+
+  } catch(err){
+    console.error('PDF generation error:', err);
+    alert('PDF generation failed: ' + err.message + '. Try with fewer results loaded.');
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = '⬇ Download PDF report';
+  }
+}
+
+async function buildPDFArea(){
+  const pdfArea   = $('pdf-area');
+  const now       = new Date().toLocaleString('en-GB',{dateStyle:'long',timeStyle:'short'});
+  const filterDesc = Object.entries(activeFilters).map(([k,v])=>{
+    const fn = CHIP_LABELS[k]; return fn ? fn(v) : `${k}: ${v}`;
+  }).join(' · ') || 'None';
+
+  let analysisHtml = '';
+  if(lastAnalysis){
+    const imgSrc = $('preview-thumb').src || '';
+    analysisHtml = `
+      <div class="pdf-analysis-box">
+        <div class="pdf-analysis-title">🔍 Vehicle Identification</div>
+        ${imgSrc ? `<img src="${imgSrc}" style="width:120px;height:80px;object-fit:cover;border-radius:6px;float:right;margin-left:12px" alt="Uploaded vehicle">` : ''}
+        <div><strong>Detected:</strong> ${esc(lastAnalysis.label)} — ${lastAnalysis.confidence}% confidence</div>
+        ${lastAnalysis.alternatives && lastAnalysis.alternatives.length ? `<div style="margin-top:4px"><strong>Alternatives:</strong> ${lastAnalysis.alternatives.map(a=>`${a.label} (${a.confidence}%)`).join(', ')}</div>` : ''}
+        <div style="margin-top:6px;font-size:11px;color:#64748b">${lastAnalysis.note || ''}</div>
+        <div style="clear:both"></div>
+      </div>`;
+  }
+
+  let statsHtml = '';
+  if(lastPriceStats && lastPriceStats.count > 1){
+    statsHtml = `
+      <div class="pdf-stats">
+        <div class="pdf-stat"><div class="pdf-stat-label">Lowest Price</div><div class="pdf-stat-val">${Number(lastPriceStats.min).toLocaleString()} EGP</div></div>
+        <div class="pdf-stat"><div class="pdf-stat-label">Highest Price</div><div class="pdf-stat-val">${Number(lastPriceStats.max).toLocaleString()} EGP</div></div>
+        <div class="pdf-stat"><div class="pdf-stat-label">Median Price</div><div class="pdf-stat-val">${Number(lastPriceStats.median).toLocaleString()} EGP</div></div>
+        <div class="pdf-stat"><div class="pdf-stat-label">Listings Found</div><div class="pdf-stat-val">${lastPriceStats.count}</div></div>
+      </div>`;
+  }
+
+  const cardsHtml = allResults.map(r => {
+    const mileText = r.mileage===0 ? '0 km' : (r.mileage>0 ? `${Number(r.mileage).toLocaleString()} km` : 'Not provided');
+    const priceText = r.price && r.price>0 ? `${Number(r.price).toLocaleString()} EGP` : 'Not listed';
+    const estText   = r.predicted_fair_price && r.predicted_fair_price>0 ? `Est. ${Number(r.predicted_fair_price).toLocaleString()} EGP` : '';
+    let badgeCls='', badgeText='';
+    if(r.deal_label){
+      if(r.deal_label.includes('Great Deal'))     { badgeCls='badge-great-pdf'; badgeText='🟢 Great Deal'; }
+      else if(r.deal_label.includes('Overpriced')){ badgeCls='badge-over-pdf';  badgeText='🔴 Overpriced'; }
+      else                                         { badgeCls='badge-fair-pdf';  badgeText='⚖️ Fair Price'; }
+    }
+    return `
+      <div class="pdf-card">
+        ${r.image_url ? `<img class="pdf-card-img" src="${r.image_url}" alt="${esc(r.name)}" crossorigin="anonymous" onerror="this.style.display='none'">` : `<div class="pdf-card-img" style="display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:11px">No photo</div>`}
+        <div class="pdf-card-body">
+          ${badgeText ? `<div class="pdf-card-badge ${badgeCls}">${badgeText}</div>` : ''}
+          <div class="pdf-card-name">${esc(r.name)}</div>
+          <div class="pdf-card-specs">${[r.year,r.transmission,mileText,r.location].filter(Boolean).join(' · ')}</div>
+          <div class="pdf-card-price">${priceText}</div>
+          ${estText ? `<div class="pdf-card-est">${estText} (${r.valuation_source||'est.'})</div>` : ''}
+          ${r.item_url ? `<div class="pdf-card-link"><a href="${r.item_url}" style="color:#0ea5e9">${r.item_url}</a></div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  pdfArea.innerHTML = `
+    <div class="pdf-header">
+      <div class="pdf-title">Apex Motors — Market Report</div>
+      <div class="pdf-date">Generated: ${now}</div>
+    </div>
+    ${analysisHtml}
+    <div class="pdf-filters"><strong>Search:</strong> ${esc(currentQuery)} &nbsp;|&nbsp; <strong>Filters:</strong> ${filterDesc} &nbsp;|&nbsp; <strong>Listings shown:</strong> ${allResults.length}</div>
+    ${statsHtml}
+    <div class="pdf-grid">${cardsHtml}</div>
+    <div class="pdf-disclaimer">
+      ⚠️ <strong>Important notes:</strong> All prices are asking prices from seller advertisements — not completed-sale prices. 
+      Price estimates are rule-based calculations for reference only and may not reflect actual market conditions. 
+      Mileage, condition, accident history, and mechanical status are seller-provided and unverified. 
+      Source: eg.hatla2ee.com · Data retrieved: ${now}
+    </div>
+    <div class="pdf-footer">Apex Motors Smart Car Market · apex-motors · Report generated for informational purposes only</div>`;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  UTILITY                                                                    */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function esc(str){
+  const d=document.createElement('div');
+  d.textContent=str||'';
+  return d.innerHTML;
 }
 </script>
 </body>
