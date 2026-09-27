@@ -1008,75 +1008,85 @@ function buildGallery(photos, name, listingUrl){
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  PDF EXPORT                                                                 */
 /* ─────────────────────────────────────────────────────────────────────────── */
+function proxyImgUrl(src){
+  // Route listing images through server-side proxy so html2canvas can load them
+  // without cross-origin canvas taint. Falls back to original src on error.
+  if(!src || !src.includes('hatla2ee.com')) return src;
+  return `/api/image-proxy?url=${encodeURIComponent(src)}`;
+}
+
+async function waitForImages(container){
+  const imgs = [...container.querySelectorAll('img')];
+  const promises = imgs.map(img => {
+    if(img.complete) return Promise.resolve();
+    return new Promise(resolve => {
+      img.addEventListener('load', resolve, {once:true});
+      img.addEventListener('error', resolve, {once:true});
+      // Safety timeout — don't block PDF forever
+      setTimeout(resolve, 5000);
+    });
+  });
+  await Promise.all(promises);
+}
+
 async function downloadPDF(){
   const btn = $('pdf-btn');
   btn.classList.add('loading');
-  btn.textContent = '⏳ Generating PDF…';
+  btn.textContent = '⏳ Building report…';
 
   try{
     await buildPDFArea();
     const pdfArea = $('pdf-area');
-    pdfArea.style.left = '0';
-    pdfArea.style.top  = '0';
-    pdfArea.style.zIndex = '-1';
 
+    // Wait for all images to load through proxy before screenshot
+    btn.textContent = '⏳ Loading images…';
+    await waitForImages(pdfArea);
+    // Give browser one more frame to finish layout
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    pdfArea.style.left    = '0';
+    pdfArea.style.top     = '0';
+    pdfArea.style.zIndex  = '-1';
+
+    btn.textContent = '⏳ Rendering PDF…';
     const canvas = await html2canvas(pdfArea, {
-      scale: 1.6,
-      useCORS: true,
-      allowTaint: true,
+      scale:           1.6,
+      useCORS:         true,
+      allowTaint:      false,   // false = strict; proxy ensures images pass same-origin
       backgroundColor: '#ffffff',
-      width: 960,
-      windowWidth: 960
+      width:           960,
+      windowWidth:     960,
+      logging:         false
     });
 
-    pdfArea.style.left = '-9999px';
+    pdfArea.style.left   = '-9999px';
     pdfArea.style.zIndex = '';
 
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
+    const pdf     = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
+    const pageW   = pdf.internal.pageSize.getWidth();
+    const pageH   = pdf.internal.pageSize.getHeight();
+    const margin  = 10;
+    const usableW = pageW - margin * 2;
+    const imgH    = usableW * (canvas.height / canvas.width);
 
-    const pageW  = pdf.internal.pageSize.getWidth();
-    const pageH  = pdf.internal.pageSize.getHeight();
-    const margin = 10;
-    const usableW = pageW - margin*2;
-
-    const imgData  = canvas.toDataURL('image/jpeg', 0.92);
-    const imgRatio = canvas.height / canvas.width;
-    const imgH     = usableW * imgRatio;
-
-    let yPos = margin;
-    let remainingH = imgH;
-    let srcY = 0;
-
-    while(remainingH > 0){
-      const sliceH = Math.min(remainingH, pageH - margin*2);
-      const sliceRatio = sliceH / imgH;
-      const srcSliceH  = sliceRatio * canvas.height;
-
-      const sliceCanvas = document.createElement('canvas');
-      sliceCanvas.width  = canvas.width;
-      sliceCanvas.height = srcSliceH;
-      const ctx = sliceCanvas.getContext('2d');
-      ctx.drawImage(canvas, 0, srcY, canvas.width, srcSliceH, 0, 0, canvas.width, srcSliceH);
-
-      const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
-      pdf.addImage(sliceData,'JPEG', margin, yPos, usableW, sliceH);
-
-      remainingH -= sliceH;
-      srcY       += srcSliceH;
-
-      if(remainingH > 0){
-        pdf.addPage();
-        yPos = margin;
-      }
+    let yPos = margin, remaining = imgH, srcY = 0;
+    while(remaining > 0){
+      const sliceH   = Math.min(remaining, pageH - margin*2);
+      const srcSliceH = sliceH / imgH * canvas.height;
+      const sc = document.createElement('canvas');
+      sc.width = canvas.width; sc.height = srcSliceH;
+      sc.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, srcSliceH, 0, 0, canvas.width, srcSliceH);
+      pdf.addImage(sc.toDataURL('image/jpeg', 0.92), 'JPEG', margin, yPos, usableW, sliceH);
+      remaining -= sliceH; srcY += srcSliceH;
+      if(remaining > 0){ pdf.addPage(); yPos = margin; }
     }
 
-    const filename = `apex-motors-${currentQuery.replace(/\s+/g,'-').toLowerCase()}-${new Date().toISOString().slice(0,10)}.pdf`;
-    pdf.save(filename);
+    pdf.save(`apex-motors-${currentQuery.replace(/\s+/g,'-').toLowerCase()}-${new Date().toISOString().slice(0,10)}.pdf`);
 
   } catch(err){
     console.error('PDF generation error:', err);
-    alert('PDF generation failed: ' + err.message + '. Try with fewer results loaded.');
+    alert(`PDF generation failed: ${err.message}. Try with fewer listings loaded.`);
   } finally {
     btn.classList.remove('loading');
     btn.textContent = '⬇ Download PDF report';
@@ -1116,25 +1126,30 @@ async function buildPDFArea(){
   }
 
   const cardsHtml = allResults.map(r => {
-    const mileText = r.mileage===0 ? '0 km' : (r.mileage>0 ? `${Number(r.mileage).toLocaleString()} km` : 'Not provided');
+    const mileText  = r.mileage===0 ? '0 km' : (r.mileage>0 ? `${Number(r.mileage).toLocaleString()} km` : 'Not provided');
     const priceText = r.price && r.price>0 ? `${Number(r.price).toLocaleString()} EGP` : 'Not listed';
-    const estText   = r.predicted_fair_price && r.predicted_fair_price>0 ? `Est. ${Number(r.predicted_fair_price).toLocaleString()} EGP` : '';
+    const estLabel  = r.valuation_source === 'CatBoost' ? 'CatBoost estimate' : (r.valuation_source ? 'Rule-based estimate' : '');
+    const estText   = r.predicted_fair_price && r.predicted_fair_price>0 ? `${Number(r.predicted_fair_price).toLocaleString()} EGP` : '';
     let badgeCls='', badgeText='';
     if(r.deal_label){
-      if(r.deal_label.includes('Great Deal'))     { badgeCls='badge-great-pdf'; badgeText='🟢 Great Deal'; }
-      else if(r.deal_label.includes('Overpriced')){ badgeCls='badge-over-pdf';  badgeText='🔴 Overpriced'; }
-      else                                         { badgeCls='badge-fair-pdf';  badgeText='⚖️ Fair Price'; }
+      if(r.deal_label.includes('Great Deal'))     { badgeCls='badge-great-pdf'; badgeText='Great Deal'; }
+      else if(r.deal_label.includes('Overpriced')){ badgeCls='badge-over-pdf';  badgeText='Overpriced'; }
+      else                                         { badgeCls='badge-fair-pdf';  badgeText='Fair Price'; }
     }
+    // Use proxied image URL so html2canvas can embed without CORS taint
+    const proxiedImg = r.image_url ? proxyImgUrl(r.image_url) : null;
     return `
       <div class="pdf-card">
-        ${r.image_url ? `<img class="pdf-card-img" src="${r.image_url}" alt="${esc(r.name)}" crossorigin="anonymous" onerror="this.style.display='none'">` : `<div class="pdf-card-img" style="display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:11px">No photo</div>`}
+        ${proxiedImg
+          ? `<img class="pdf-card-img" src="${proxiedImg}" alt="${esc(r.name)}" onerror="this.style.display='none'">`
+          : `<div class="pdf-card-img" style="display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:11px">No photo</div>`}
         <div class="pdf-card-body">
           ${badgeText ? `<div class="pdf-card-badge ${badgeCls}">${badgeText}</div>` : ''}
           <div class="pdf-card-name">${esc(r.name)}</div>
-          <div class="pdf-card-specs">${[r.year,r.transmission,mileText,r.location].filter(Boolean).join(' · ')}</div>
-          <div class="pdf-card-price">${priceText}</div>
-          ${estText ? `<div class="pdf-card-est">${estText} (${r.valuation_source||'est.'})</div>` : ''}
-          ${r.item_url ? `<div class="pdf-card-link"><a href="${r.item_url}" style="color:#0ea5e9">${r.item_url}</a></div>` : ''}
+          <div class="pdf-card-specs">${[r.year,r.transmission,mileText,r.location,r.fuel_type].filter(Boolean).join(' · ')}</div>
+          <div class="pdf-card-price">Listed: ${priceText}</div>
+          ${estText && estLabel ? `<div class="pdf-card-est">${estLabel}: ${estText}</div>` : ''}
+          ${r.item_url ? `<div class="pdf-card-link"><a href="${r.item_url}" style="color:#0ea5e9">${r.item_url}</a></div>` : '<div class="pdf-card-link" style="color:#94a3b8">Link unavailable</div>'}
         </div>
       </div>`;
   }).join('');
@@ -1149,12 +1164,13 @@ async function buildPDFArea(){
     ${statsHtml}
     <div class="pdf-grid">${cardsHtml}</div>
     <div class="pdf-disclaimer">
-      ⚠️ <strong>Important notes:</strong> All prices are asking prices from seller advertisements — not completed-sale prices. 
-      Price estimates are rule-based calculations for reference only and may not reflect actual market conditions. 
-      Mileage, condition, accident history, and mechanical status are seller-provided and unverified. 
+      ⚠️ <strong>Important notes:</strong> All listed prices are asking prices from seller advertisements, not completed-sale prices.
+      Price estimates labelled "CatBoost estimate" are predictions from a trained gradient-boosting model; those labelled
+      "Rule-based estimate" use a depreciation formula and are less accurate. Neither constitutes a valuation.
+      Mileage, condition, accident history, and mechanical status are seller-provided and unverified.
       Source: eg.hatla2ee.com · Data retrieved: ${now}
     </div>
-    <div class="pdf-footer">Apex Motors Smart Car Market · apex-motors · Report generated for informational purposes only</div>`;
+    <div class="pdf-footer">Apex Motors Smart Car Market · Report generated for informational purposes only</div>`;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
