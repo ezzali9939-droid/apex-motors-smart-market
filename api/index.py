@@ -917,46 +917,50 @@ def image_proxy():
 @app.route("/api/vision-health", methods=["GET"])
 def vision_health():
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
-    vision_key = os.environ.get("VISION_API_KEY") or os.environ.get("GOOGLE_VISION_API_KEY")
     openai_key = os.environ.get("OPENAI_API_KEY")
+    vision_key = os.environ.get("VISION_API_KEY") or os.environ.get("GOOGLE_VISION_API_KEY")
     
     token_status = "configured" if hf_token else "missing"
-    vision_key_status = "configured" if vision_key else "missing"
     openai_key_status = "configured" if openai_key else "missing"
+    vision_key_status = "configured" if vision_key else "missing"
 
-    active_engine = "HuggingFace Router API" if hf_token else ("External Vision API" if vision_key or openai_key else "Apex Perceptual Vision Engine (Local)")
+    active_provider = "HuggingFace Hub Inference Client" if hf_token else (
+        "OpenAI Vision API" if openai_key else (
+            "Google Cloud Vision API" if vision_key else "None (Unconfigured)"
+        )
+    )
 
     probe_result = "not_probed"
     probe_status = 200
+
     if hf_token:
         try:
             from PIL import Image as _PIL_Image
             buf = io.BytesIO()
             _PIL_Image.new("RGB", (32, 32), (200, 100, 50)).save(buf, format="JPEG")
             probe_bytes = buf.getvalue()
-            headers = {
-                "Authorization": f"Bearer {hf_token}",
-                "Content-Type": "image/jpeg"
-            }
-            resp = requests.post("https://router.huggingface.co/hf-inference/models/dima806/car_models_image_detection", data=probe_bytes, headers=headers, timeout=15)
+            headers = {"Authorization": f"Bearer {hf_token}", "Content-Type": "image/jpeg"}
+            resp = requests.post("https://router.huggingface.co/hf-inference/models/dima806/car_models_image_detection", data=probe_bytes, headers=headers, timeout=12)
             probe_status = resp.status_code
-            probe_result = "ok" if resp.status_code == 200 else f"http_{resp.status_code}"
+            probe_result = "200_ok" if resp.status_code == 200 else f"http_{resp.status_code}"
         except Exception as ex:
-            probe_result = f"error: {ex}"
+            probe_result = f"error: {type(ex).__name__}: {ex}"
+
+    status_str = "ready" if (hf_token and probe_status == 200) or openai_key or vision_key else "unconfigured"
 
     return jsonify({
         "service": "vehicle-vision",
-        "status": "ready",
-        "active_engine": active_engine,
+        "status": status_str,
+        "active_provider": active_provider,
+        "model": "dima806/car_models_image_detection",
         "env_vars": {
             "HF_TOKEN": token_status,
-            "VISION_API_KEY": vision_key_status,
             "OPENAI_API_KEY": openai_key_status,
+            "VISION_API_KEY": vision_key_status,
         },
         "probe_status": probe_status,
         "probe_result": probe_result,
-        "pil_available": HAS_PIL,
-        "numpy_available": True
+        "pil_available": HAS_PIL
     })
 
 # ── Image classification ───────────────────────────────────────────────────────
@@ -972,38 +976,32 @@ def _prepare_image_bytes(file_storage):
     if not raw or len(raw) == 0:
         return None, "INVALID_IMAGE: uploaded file is empty"
     
-    # Check max file size (15MB limit)
     if len(raw) > 15 * 1024 * 1024:
         return None, "INVALID_IMAGE: file size exceeds 15MB limit"
 
-    # Verify image is parseable
     try:
         probe = Image.open(io.BytesIO(raw))
-        probe.verify()  # raises on corrupt images
+        probe.verify()
     except Exception as ex:
         return None, f"INVALID_IMAGE: image verification failed: {type(ex).__name__}: {ex}"
     
-    # Re-open (verify() closes file pointer)
     try:
         img = Image.open(io.BytesIO(raw))
     except Exception as ex:
         return None, f"INVALID_IMAGE: could not re-open image: {ex}"
     
-    # Fix EXIF orientation (handles rotated mobile uploads)
     try:
         from PIL import ImageOps
         img = ImageOps.exif_transpose(img)
     except Exception:
-        pass  # non-fatal
+        pass
     
-    # Normalize to RGB (handles CMYK, RGBA, grayscale, palette)
     try:
         if img.mode != "RGB":
             img = img.convert("RGB")
     except Exception as ex:
         return None, f"INVALID_IMAGE: color conversion failed: {ex}"
     
-    # Resize maintaining aspect ratio (max 640px)
     try:
         img.thumbnail((640, 640), Image.LANCZOS)
     except Exception:
@@ -1012,7 +1010,6 @@ def _prepare_image_bytes(file_storage):
         except Exception as ex:
             return None, f"INVALID_IMAGE: resize failed: {ex}"
     
-    # Re-encode as optimized JPEG
     try:
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=88)
@@ -1021,7 +1018,8 @@ def _prepare_image_bytes(file_storage):
         return None, f"INVALID_IMAGE: JPEG re-encode failed: {ex}"
 
 def _parse_hf_label(label_raw):
-    """Parse HF label like 'Kia_Sportage_2022' into structured make/model/year."""
+    """Parse HF label like 'Kia_Sportage' or 'Kia_Sportage_2022' into structured make/model/year.
+    Does NOT manufacture or append an arbitrary year if not present in original label."""
     label = label_raw.replace("_", " ").strip()
     parts = label.split()
     make = parts[0] if len(parts) >= 1 else label
@@ -1040,123 +1038,100 @@ def _parse_hf_label(label_raw):
         "year_detected": year,
     }
 
-def _perceptual_vehicle_classify(img_bytes):
-    """
-    Apex Perceptual Vision Engine: Decodes image, extracts multi-zone color distribution,
-    luminance histogram, aspect ratio, and perceptual feature hashes to match against
-    reference vehicle signatures (Mercedes-Benz, Kia, Toyota, Hyundai, BMW, Audi, Nissan, etc.).
-    Guarantees robust, zero-crash local inference in serverless environments.
-    """
-    try:
-        img = Image.open(io.BytesIO(img_bytes))
-        img = ImageOps.exif_transpose(img)
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        
-        orig_w, orig_h = img.size
-        aspect_ratio = orig_w / float(orig_h)
-
-        # 224x224 feature extraction array
-        img_224 = img.resize((224, 224), Image.LANCZOS)
-        arr = np.array(img_224, dtype=np.float32)
-
-        r_mean = float(arr[:, :, 0].mean())
-        g_mean = float(arr[:, :, 1].mean())
-        b_mean = float(arr[:, :, 2].mean())
-
-        # Grayscale perceptual hash
-        gray = img.resize((8, 8), Image.LANCZOS).convert('L')
-        gray_arr = np.array(gray, dtype=np.float32)
-        avg = float(gray_arr.mean())
-        phash_bits = sum(1 for val in gray_arr.flatten() if val > avg)
-
-        # Standard vehicle taxonomy database for signature matching
-        catalog = [
-            {"make": "Mercedes-Benz", "model": "AMG GT", "year": 2022, "body": "Coupe/Sports", "sig": [21, 55, 72], "phash": 31},
-            {"make": "Mercedes-Benz", "model": "C-Class", "year": 2023, "body": "Sedan", "sig": [45, 60, 80], "phash": 28},
-            {"make": "Kia", "model": "Sportage", "year": 2024, "body": "SUV", "sig": [100, 110, 115], "phash": 35},
-            {"make": "Kia", "model": "Cerato", "year": 2024, "body": "Sedan", "sig": [130, 135, 140], "phash": 32},
-            {"make": "Toyota", "model": "Corolla", "year": 2024, "body": "Sedan", "sig": [150, 150, 155], "phash": 30},
-            {"make": "Toyota", "model": "Camry", "year": 2024, "body": "Sedan", "sig": [110, 115, 120], "phash": 29},
-            {"make": "Toyota", "model": "Land Cruiser", "year": 2024, "body": "SUV", "sig": [180, 185, 190], "phash": 40},
-            {"make": "Hyundai", "model": "Tucson", "year": 2024, "body": "SUV", "sig": [90, 95, 100], "phash": 34},
-            {"make": "Hyundai", "model": "Elantra", "year": 2024, "body": "Sedan", "sig": [120, 125, 130], "phash": 33},
-            {"make": "BMW", "model": "3 Series", "year": 2023, "body": "Sedan", "sig": [50, 55, 65], "phash": 30},
-            {"make": "BMW", "model": "X5", "year": 2024, "body": "SUV", "sig": [70, 75, 85], "phash": 36},
-            {"make": "Audi", "model": "A4", "year": 2023, "body": "Sedan", "sig": [140, 142, 145], "phash": 31},
-            {"make": "Nissan", "model": "Sunny", "year": 2023, "body": "Sedan", "sig": [160, 162, 165], "phash": 28},
-        ]
-
-        # Calculate visual similarity score per vehicle signature
-        scores = []
-        for car in catalog:
-            c_r, c_g, c_b = car["sig"]
-            rgb_diff = math.sqrt((r_mean - c_r)**2 + (g_mean - c_g)**2 + (b_mean - c_b)**2)
-            hash_diff = abs(phash_bits - car["phash"])
-            # Combined distance score (lower is closer)
-            dist = rgb_diff * 0.7 + hash_diff * 3.0
-            similarity = max(50.0, min(98.5, 100.0 - (dist / 3.0)))
-            scores.append((similarity, car))
-        
-        scores.sort(key=lambda x: x[0], reverse=True)
-        top_score, top_car = scores[0]
-
-        alternatives = []
-        for sim, car in scores[1:5]:
-            alternatives.append({
-                "label": f"{car['make']} {car['model']} {car['year']}",
-                "make": car["make"],
-                "model": car["model"],
-                "year_detected": car["year"],
-                "confidence": round(sim, 1)
-            })
-
-        return {
-            "success": True,
-            "label": f"{top_car['make']} {top_car['model']} {top_car['year']}",
-            "make": top_car["make"],
-            "model": top_car["model"],
-            "year_detected": top_car["year"],
-            "confidence": round(top_score, 1),
-            "alternatives": alternatives,
-            "model_used": "Apex Perceptual Vision Engine v2.4",
-            "note": "Visual feature identification based on color profile, aspect ratio, and vehicle contour hashing."
-        }
-    except Exception as ex:
-        print(f"[classify] Perceptual engine error: {type(ex).__name__}: {ex}")
-        return None
-
-def _call_hf_vision(img_bytes):
-    """POST image bytes to HF Inference Router.
-    Returns dict with keys: success, status_code, data_or_error"""
+def _call_hf_vision_api(img_bytes):
+    """Executes real trained model inference via Hugging Face InferenceClient / Router API.
+    Returns (result_dict, error_dict)."""
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
     if not hf_token:
-        return {"success": False, "status_code": 401, "error": "HF_TOKEN not configured", "code": "NO_TOKEN"}
+        return None, {"success": False, "code": "VISION_SERVICE_UNAVAILABLE", "error": "HF_TOKEN environment variable is missing.", "status_code": 503}
 
+    try:
+        from huggingface_hub import InferenceClient
+        client = InferenceClient(provider="hf-inference", token=hf_token)
+        hf_predictions = client.image_classification(img_bytes, model="dima806/car_models_image_detection")
+        
+        # Convert InferenceClient output objects to dicts
+        raw_list = []
+        for pred in hf_predictions:
+            lbl = getattr(pred, "label", None) or (pred.get("label") if isinstance(pred, dict) else "")
+            sc = getattr(pred, "score", None) or (pred.get("score") if isinstance(pred, dict) else 0.0)
+            raw_list.append({"label": str(lbl), "score": float(sc)})
+        
+        return {"data": raw_list, "model": "dima806/car_models_image_detection", "provider": "Hugging Face InferenceClient"}, None
+    except Exception as ex_hub:
+        print(f"[vision] InferenceClient failed: {type(ex_hub).__name__}: {ex_hub}. Trying direct router request...")
+
+    # Direct Router HTTP POST fallback
     headers = {
         "Authorization": f"Bearer {hf_token}",
         "Accept": "application/json",
         "Content-Type": "image/jpeg"
     }
 
-    print(f"[vision] HF_TOKEN configured, payload={len(img_bytes)}b, url={HF_ROUTER_URL}")
-
     try:
         resp = requests.post(HF_ROUTER_URL, data=img_bytes, headers=headers, timeout=25)
-        status = resp.status_code
-        print(f"[vision] HF router responded: status={status}, body_preview={resp.text[:200]}")
-
-        if status == 200:
+        if resp.status_code == 200:
             data = resp.json()
             if isinstance(data, list) and len(data) > 0:
-                return {"success": True, "status_code": 200, "data": data}
-            return {"success": False, "status_code": 422, "error": "Empty vision result", "code": "VEHICLE_NOT_IDENTIFIED"}
+                raw_list = [{"label": str(x.get("label","")), "score": float(x.get("score",0.0))} for x in data]
+                return {"data": raw_list, "model": "dima806/car_models_image_detection", "provider": "Hugging Face Router API"}, None
+            return None, {"success": False, "code": "VEHICLE_NOT_IDENTIFIED", "error": "Vision API returned empty result.", "status_code": 422}
         
-        return {"success": False, "status_code": status, "error": f"HF router HTTP {status}", "code": f"HF_HTTP_{status}"}
+        if resp.status_code in (401, 403):
+            return None, {"success": False, "code": "VISION_SERVICE_UNAVAILABLE", "error": f"HuggingFace API authentication failed (HTTP {resp.status_code}). Check HF_TOKEN.", "status_code": 503}
+        
+        return None, {"success": False, "code": "VISION_SERVICE_UNAVAILABLE", "error": f"HuggingFace vision service returned HTTP {resp.status_code}.", "status_code": 503}
 
     except Exception as ex:
-        print(f"[vision] HF router request failed: {type(ex).__name__}: {ex}")
-        return {"success": False, "status_code": 503, "error": str(ex), "code": "VISION_UNAVAILABLE"}
+        print(f"[vision] HF direct router request failed: {type(ex).__name__}: {ex}")
+        return None, {"success": False, "code": "VISION_SERVICE_UNAVAILABLE", "error": f"Could not connect to vision AI provider: {type(ex).__name__}", "status_code": 503}
+
+def _call_openai_vision_api(img_bytes):
+    """Executes real multimodal AI vision inference via OpenAI gpt-4o-mini if OPENAI_API_KEY is present."""
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if not openai_key:
+        return None
+
+    import base64
+    import json
+    b64_img = base64.b64encode(img_bytes).decode('utf-8')
+
+    headers = {
+        "Authorization": f"Bearer {openai_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Identify the vehicle in this photo. Return ONLY a valid JSON object with keys: \"is_vehicle\" (boolean), \"make\" (string or null), \"model\" (string or null), \"confidence\" (float 0.0 to 1.0), \"estimated_year_from\" (integer or null), \"estimated_year_to\" (integer or null), \"alternatives\" (array of {make, model, confidence}). If the image is not a vehicle or cannot be identified, set is_vehicle to false."
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+                    }
+                ]
+            }
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.1,
+        "max_tokens": 300
+    }
+
+    try:
+        r = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=25)
+        if r.status_code == 200:
+            res_data = r.json()
+            content_str = res_data["choices"][0]["message"]["content"]
+            parsed_json = json.loads(content_str)
+            return parsed_json
+    except Exception as ex:
+        print(f"[vision] OpenAI Vision API call failed: {ex}")
+        return None
 
 @app.route("/api/classify", methods=["POST"])
 def classify_image():
@@ -1194,55 +1169,112 @@ def classify_image():
             "error": prep_error
         }), 400
 
-    # ── 4. Vision inference pipeline ──────────────────────────────────────────
-    # Try Hugging Face Router first if token is configured
+    # ── 4. Real AI Model Inference Pipeline ───────────────────────────────────
+    # A. Try Hugging Face Inference API / Client first if HF_TOKEN is present
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
     if hf_token:
-        vision_result = _call_hf_vision(img_bytes)
-        if vision_result.get("success"):
-            raw_list = vision_result["data"]
+        ai_result, ai_err = _call_hf_vision_api(img_bytes)
+        if ai_result and ai_result.get("data"):
+            raw_list = ai_result["data"]
             top = raw_list[0]
-            top_label = top.get("label", "")
+            top_label = top.get("label", "").strip()
             top_score = float(top.get("score", 0.0))
 
-            if top_score >= 0.10 and top_label:
-                parsed_top = _parse_hf_label(top_label)
-                alternatives = []
-                for item in raw_list[1:6]:
-                    alt_label = item.get("label", "")
-                    alt_score = float(item.get("score", 0.0))
-                    if alt_label and alt_score >= 0.05:
-                        parsed_alt = _parse_hf_label(alt_label)
-                        alternatives.append({
-                            "label": parsed_alt["display_label"],
-                            "make": parsed_alt["make"],
-                            "model": parsed_alt["model"],
-                            "year_detected": parsed_alt["year_detected"],
-                            "confidence": round(alt_score * 100, 1)
-                        })
-
+            # Strictly enforce confidence threshold: score < 0.40 -> VEHICLE_NOT_IDENTIFIED
+            if top_score < 0.40 or not top_label:
                 return jsonify({
-                    "success": True,
-                    "label": parsed_top["display_label"],
-                    "make": parsed_top["make"],
-                    "model": parsed_top["model"],
-                    "year_detected": parsed_top["year_detected"],
-                    "confidence": round(top_score * 100, 1),
-                    "alternatives": alternatives,
-                    "model_used": "dima806/car_models_image_detection",
-                    "note": "Visual identification via HuggingFace Inference API."
-                }), 200
+                    "success": False,
+                    "code": "VEHICLE_NOT_IDENTIFIED",
+                    "error": "Vehicle not identified with sufficient confidence. Try uploading a clearer exterior photo showing the front or rear of the car.",
+                    "raw_confidence": round(top_score * 100, 1)
+                }), 422
 
-    # Fallback to Apex Perceptual Vision Engine
-    perc_result = _perceptual_vehicle_classify(img_bytes)
-    if perc_result:
-        return jsonify(perc_result), 200
+            parsed_top = _parse_hf_label(top_label)
 
+            # Top-K real predictions with exact model output probabilities
+            alternatives = []
+            for item in raw_list[1:6]:
+                alt_label = item.get("label", "").strip()
+                alt_score = float(item.get("score", 0.0))
+                if alt_label and alt_score >= 0.03:
+                    parsed_alt = _parse_hf_label(alt_label)
+                    alternatives.append({
+                        "label": parsed_alt["display_label"],
+                        "make": parsed_alt["make"],
+                        "model": parsed_alt["model"],
+                        "year_detected": parsed_alt["year_detected"],
+                        "confidence": round(alt_score * 100, 1)
+                    })
+
+            return jsonify({
+                "success": True,
+                "label": parsed_top["display_label"],
+                "make": parsed_top["make"],
+                "model": parsed_top["model"],
+                "year_detected": parsed_top["year_detected"],
+                "confidence": round(top_score * 100, 1),
+                "alternatives": alternatives,
+                "engine": "huggingface",
+                "model_used": ai_result.get("model", "dima806/car_models_image_detection"),
+                "provider": ai_result.get("provider", "Hugging Face Inference API"),
+                "note": "Visual identification via trained computer vision model. Exact specs require separate lookup."
+            }), 200
+        
+        if ai_err:
+            return jsonify(ai_err), ai_err.get("status_code", 503)
+
+    # B. Try OpenAI Multimodal Vision API if OPENAI_API_KEY is present
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
+        oai_res = _call_openai_vision_api(img_bytes)
+        if oai_res and oai_res.get("is_vehicle") and oai_res.get("make"):
+            conf = float(oai_res.get("confidence", 0.85))
+            if conf < 0.40:
+                return jsonify({
+                    "success": False,
+                    "code": "VEHICLE_NOT_IDENTIFIED",
+                    "error": "Vehicle not identified with sufficient confidence.",
+                    "raw_confidence": round(conf * 100, 1)
+                }), 422
+
+            make_str = str(oai_res["make"])
+            model_str = str(oai_res.get("model", ""))
+            label_str = f"{make_str} {model_str}".strip()
+
+            alts = []
+            for alt in oai_res.get("alternatives", []):
+                m_a = alt.get("make", "")
+                md_a = alt.get("model", "")
+                c_a = float(alt.get("confidence", 0.1))
+                alts.append({
+                    "label": f"{m_a} {md_a}".strip(),
+                    "make": m_a,
+                    "model": md_a,
+                    "year_detected": None,
+                    "confidence": round(c_a * 100, 1)
+                })
+
+            return jsonify({
+                "success": True,
+                "label": label_str,
+                "make": make_str,
+                "model": model_str,
+                "year_detected": None,
+                "estimated_year_range": [oai_res.get("estimated_year_from"), oai_res.get("estimated_year_to")],
+                "confidence": round(conf * 100, 1),
+                "alternatives": alts,
+                "engine": "openai_vision",
+                "model_used": "gpt-4o-mini",
+                "provider": "OpenAI Multimodal Vision API",
+                "note": "Visual identification via OpenAI Multimodal Vision AI."
+            }), 200
+
+    # C. No AI Provider Credentials Configured / Offline
     return jsonify({
         "success": False,
-        "code": "VEHICLE_NOT_IDENTIFIED",
-        "error": "Could not identify vehicle with sufficient confidence. Try uploading a clearer photo showing the front or rear exterior of the car."
-    }), 422
+        "code": "VISION_SERVICE_UNAVAILABLE",
+        "error": "Vehicle analysis service is temporarily unavailable. AI vision credentials (HF_TOKEN or OPENAI_API_KEY) are missing or offline."
+    }), 503
 
 @app.route("/api/search", methods=["GET"])
 def search():
