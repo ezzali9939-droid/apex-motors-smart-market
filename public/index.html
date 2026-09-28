@@ -613,17 +613,19 @@ async function classifyImage(file){
   $('empty').style.display = 'none';
   allResults = [];
 
-  setSpinner('Analyzing vehicle image with Vision AI…');
+  setSpinner('Uploading image…');
 
   const fd = new FormData();
   fd.append('image', file);
 
   try{
+    setSpinner('Analyzing vehicle with AI Vision…');
     const resp = await fetch('/api/classify', { method:'POST', body:fd });
     if(myReq !== reqCounter) return;
     const data = await resp.json();
 
     if(resp.ok && data.success && data.label){
+      setSpinner('Vehicle identified! Loading market listings & specs…');
       lastAnalysis = data;
       showAnalysisPanel(data);
       $('search-input').value = data.label;
@@ -631,17 +633,23 @@ async function classifyImage(file){
       return;
     }
 
-    if(resp.status === 503 && data.retry){
-      setError(`⏳ ${data.error} — you can also type a search above.`);
+    hideSpinner();
+
+    if(resp.status === 422 || data.code === 'VEHICLE_NOT_IDENTIFIED'){
+      setError('We couldn’t identify this vehicle reliably. Try another image showing the front or rear of the car clearly.');
       return;
     }
 
-    hideSpinner();
-    setError(`⚠️ ${data.error || 'Could not identify vehicle. Try a clearer exterior photo or type a search.'}`);
+    if(resp.status === 503 || data.code === 'VISION_SERVICE_UNAVAILABLE'){
+      setError('Vehicle analysis service is temporarily unavailable.');
+      return;
+    }
+
+    setError(data.error || 'Could not identify vehicle. Try a clearer exterior photo or type a manual search above.');
   } catch(err){
     if(myReq !== reqCounter) return;
     hideSpinner();
-    setError('⚠️ Vision API unreachable. Please type your search query above.');
+    setError('Vehicle analysis service is temporarily unavailable.');
   }
 }
 
