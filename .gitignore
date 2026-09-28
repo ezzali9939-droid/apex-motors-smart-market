@@ -13,3 +13,4 @@ ENV/
 node_modules/
 *.log
 .vercel
+.env*

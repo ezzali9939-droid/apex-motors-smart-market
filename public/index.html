@@ -235,6 +235,64 @@ h1 span{color:var(--blue);text-shadow:0 0 30px rgba(56,189,248,.5)}
 .pdf-area .pdf-card-link{font-size:10px;color:#0ea5e9;word-break:break-all}
 .pdf-area .pdf-footer{margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8}
 .pdf-area .pdf-disclaimer{background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px 12px;margin-top:14px;font-size:11px;color:#92400e}
+
+/* ── Autocomplete dropdown ───────────────────────────────────────────────── */
+.ac-wrap{position:relative;flex:1;display:flex;align-items:center;gap:10px}
+.ac-dropdown{position:absolute;top:calc(100% + 10px);left:0;right:0;background:linear-gradient(180deg,rgba(10,14,30,.98),rgba(5,8,18,.99));border:1px solid rgba(56,189,248,.4);border-radius:14px;box-shadow:0 24px 56px rgba(0,0,0,.75),0 0 0 1px rgba(56,189,248,.08);backdrop-filter:blur(24px);z-index:1000;overflow:hidden;animation:acFadeIn .15s ease}
+@keyframes acFadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.ac-item{display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;transition:background .15s;border-bottom:1px solid rgba(255,255,255,.04)}
+.ac-item:last-child{border-bottom:none}
+.ac-item:hover,.ac-item.focused{background:rgba(56,189,248,.12)}
+.ac-item-icon{font-size:1.1rem;flex-shrink:0;opacity:.7}
+.ac-item-main{flex:1;min-width:0}
+.ac-item-display{color:#fff;font-size:.9rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-item-sub{color:#64748b;font-size:.72rem;margin-top:1px}
+.ac-item-badge{flex-shrink:0;background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.25);border-radius:20px;padding:2px 8px;font-size:.65rem;color:#7dd3fc}
+.ac-no-results{padding:14px 16px;color:#475569;font-size:.83rem;text-align:center}
+
+/* ── Vehicle Intelligence Report ─────────────────────────────────────────── */
+.vir-modal{display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);justify-content:center;align-items:flex-start;padding:24px 16px;overflow-y:auto}
+.vir-modal.open{display:flex}
+.vir-box{background:linear-gradient(180deg,rgba(10,16,32,.98),rgba(5,9,20,.99));border:1px solid rgba(56,189,248,.35);border-radius:20px;max-width:780px;width:100%;box-shadow:0 32px 80px rgba(0,0,0,.8);overflow:hidden;animation:virIn .25s ease}
+@keyframes virIn{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
+.vir-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid rgba(56,189,248,.15);background:rgba(56,189,248,.04)}
+.vir-title{font-size:1.1rem;font-weight:800;color:#fff}
+.vir-subtitle{font-size:.75rem;color:#64748b;margin-top:2px}
+.vir-close{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.85rem;transition:all .2s}
+.vir-close:hover{background:rgba(239,68,68,.35)}
+.vir-body{padding:20px 22px}
+.vir-identity{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:20px}
+@media(max-width:540px){.vir-identity{grid-template-columns:1fr}}
+.vir-field{background:rgba(15,23,42,.6);border:1px solid rgba(56,189,248,.12);border-radius:10px;padding:12px 14px}
+.vir-field-label{font-size:.66rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;display:flex;align-items:center;gap:5px}
+.vir-field-val{font-size:.92rem;font-weight:700;color:#fff}
+.vir-tag-verified{display:inline-block;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:#86efac;border-radius:20px;padding:1px 7px;font-size:.6rem;font-weight:700;vertical-align:middle}
+.vir-tag-detected{display:inline-block;background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.3);color:#fde047;border-radius:20px;padding:1px 7px;font-size:.6rem;font-weight:700;vertical-align:middle}
+.vir-section-title{font-size:.78rem;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:1px;margin:18px 0 10px;display:flex;align-items:center;gap:7px}
+.vir-section-title::after{content:'';flex:1;height:1px;background:rgba(56,189,248,.15)}
+.vir-variants{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+.vir-variant{background:rgba(15,23,42,.6);border:1px solid rgba(56,189,248,.15);border-radius:12px;padding:14px 16px;cursor:pointer;transition:border-color .2s,background .2s}
+.vir-variant:hover{border-color:rgba(56,189,248,.4);background:rgba(56,189,248,.05)}
+.vir-variant.selected{border-color:var(--blue);background:rgba(56,189,248,.08)}
+.vir-variant-name{font-size:.92rem;font-weight:700;color:#fff;margin-bottom:8px}
+.vir-specs-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media(max-width:500px){.vir-specs-grid{grid-template-columns:repeat(2,1fr)}}
+.vir-spec-item{background:rgba(3,7,18,.5);border-radius:8px;padding:8px 10px}
+.vir-spec-label{font-size:.62rem;color:#475569;text-transform:uppercase;letter-spacing:.4px}
+.vir-spec-val{font-size:.83rem;font-weight:700;color:#e2e8f0;margin-top:2px}
+.vir-dimensions{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px}
+@media(max-width:540px){.vir-dimensions{grid-template-columns:repeat(2,1fr)}}
+.vir-dim{background:rgba(15,23,42,.6);border:1px solid rgba(56,189,248,.1);border-radius:8px;padding:10px 12px;text-align:center}
+.vir-dim-val{font-size:1rem;font-weight:800;color:var(--blue)}
+.vir-dim-label{font-size:.64rem;color:#475569;margin-top:2px}
+.vir-cta-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.vir-cta-primary{flex:1;min-width:200px;background:var(--blue);color:#000;border:none;border-radius:10px;padding:12px 18px;font-size:.88rem;font-weight:800;font-family:'Inter',sans-serif;cursor:pointer;transition:opacity .2s}
+.vir-cta-primary:hover{opacity:.85}
+.vir-cta-secondary{background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.35);color:#7dd3fc;border-radius:10px;padding:12px 18px;font-size:.88rem;font-weight:700;font-family:'Inter',sans-serif;cursor:pointer;transition:all .2s}
+.vir-cta-secondary:hover{background:rgba(56,189,248,.2)}
+.vir-disclaimer{margin-top:14px;padding:10px 12px;background:rgba(234,179,8,.06);border-left:2px solid rgba(234,179,8,.35);border-radius:0 8px 8px 0;font-size:.72rem;color:#78716c;line-height:1.5}
+.vir-loading{text-align:center;padding:40px 20px;color:var(--blue);font-size:.9rem}
+.vir-error{padding:20px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:10px;color:#fca5a5;font-size:.85rem;margin-bottom:14px}
 </style>
 </head>
 <body>
@@ -266,9 +324,13 @@ h1 span{color:var(--blue);text-shadow:0 0 30px rgba(56,189,248,.5)}
   <div class="search-wrap">
     <div class="search-row">
       <form class="search-form" id="search-form" onsubmit="event.preventDefault(); initiateSearch();">
-        <input type="text" id="search-input" class="search-input"
-          placeholder="Try 'Toyota Corolla', 'Kia Sportage', 'Mercedes C180'…"
-          autocomplete="off" aria-label="Search for a vehicle">
+        <div class="ac-wrap" style="flex:1;position:relative">
+          <input type="text" id="search-input" class="search-input"
+            placeholder="Try 'Toyota Corolla', 'Kia Sportage 22', 'Mercedes C180'…"
+            autocomplete="off" aria-label="Search for a vehicle"
+            aria-autocomplete="list" aria-haspopup="listbox">
+          <div class="ac-dropdown" id="ac-dropdown" style="display:none" role="listbox"></div>
+        </div>
         <button type="button" class="cam-btn" id="cam-btn" title="Upload car image for AI recognition"
           onclick="triggerFileSelect()" aria-label="Upload car image">📷</button>
         <input type="file" id="file-input" accept="image/*" style="display:none" aria-label="Car image file input">
@@ -398,6 +460,22 @@ h1 span{color:var(--blue);text-shadow:0 0 30px rgba(56,189,248,.5)}
           <input class="ap-correct-input" id="ap-correct-input" type="text" placeholder="Correct the identification (e.g. 'Kia Sportage 2022')">
           <button class="ap-correct-btn" type="button" onclick="correctSearch()">Search this ↗</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vehicle Intelligence Report Modal -->
+  <div class="vir-modal" id="vir-modal" role="dialog" aria-modal="true" aria-label="Vehicle Intelligence Report">
+    <div class="vir-box" id="vir-box">
+      <div class="vir-head">
+        <div>
+          <div class="vir-title">🔬 Vehicle Intelligence Report</div>
+          <div class="vir-subtitle">Verified specifications from the Apex Motors database</div>
+        </div>
+        <button class="vir-close" id="vir-close" type="button" aria-label="Close report" onclick="closeVIR()">✕</button>
+      </div>
+      <div class="vir-body" id="vir-body">
+        <div class="vir-loading" id="vir-loading">⚡ Loading vehicle data…</div>
       </div>
     </div>
   </div>
@@ -1180,6 +1258,370 @@ function esc(str){
   const d=document.createElement('div');
   d.textContent=str||'';
   return d.innerHTML;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  AUTOCOMPLETE                                                                */
+/* ─────────────────────────────────────────────────────────────────────────── */
+let acTimer = null;
+let acFocusIdx = -1;
+let acSuggestions = [];
+
+const searchInput = $('search-input');
+const acDropdown  = $('ac-dropdown');
+
+function acBodyIcons(bodyType){
+  const m = {'Sedan':'🚗','SUV':'🚙','Hatchback':'🚗','Pickup':'🛻','Van':'🚐','Coupe':'🏎️'};
+  return m[bodyType] || '🚘';
+}
+
+function renderAcDropdown(suggestions){
+  acSuggestions = suggestions;
+  acFocusIdx = -1;
+  if(!suggestions.length){
+    acDropdown.style.display = 'none';
+    return;
+  }
+  acDropdown.innerHTML = '';
+  suggestions.forEach((s, i) => {
+    const item = document.createElement('div');
+    item.className = 'ac-item';
+    item.setAttribute('role', 'option');
+    item.setAttribute('data-idx', i);
+    item.innerHTML = `
+      <div class="ac-item-icon">${acBodyIcons(s.body_type)}</div>
+      <div class="ac-item-main">
+        <div class="ac-item-display">${esc(s.display)}</div>
+        <div class="ac-item-sub">${esc(s.body_type)}${s.year ? '' : ' · All years'}</div>
+      </div>
+      ${s.year ? `<div class="ac-item-badge">${s.year}</div>` : ''}
+    `;
+    item.addEventListener('mousedown', e => {
+      e.preventDefault();
+      selectAcItem(s);
+    });
+    acDropdown.appendChild(item);
+  });
+  acDropdown.style.display = 'block';
+}
+
+function selectAcItem(s){
+  const q = s.year ? `${s.make} ${s.model} ${s.year}` : `${s.make} ${s.model}`;
+  searchInput.value = q;
+  acDropdown.style.display = 'none';
+  acFocusIdx = -1;
+  initiateSearch(q);
+}
+
+function hideAcDropdown(){
+  acDropdown.style.display = 'none';
+  acFocusIdx = -1;
+}
+
+async function fetchSuggestions(q){
+  if(!q || q.length < 1){ hideAcDropdown(); return; }
+  try{
+    const resp = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`);
+    const data = await resp.json();
+    renderAcDropdown(data.suggestions || []);
+  } catch(e){
+    hideAcDropdown();
+  }
+}
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(acTimer);
+  const q = searchInput.value.trim();
+  if(!q){ hideAcDropdown(); return; }
+  acTimer = setTimeout(() => fetchSuggestions(q), 280);
+});
+
+searchInput.addEventListener('keydown', e => {
+  const items = acDropdown.querySelectorAll('.ac-item');
+  if(e.key === 'ArrowDown'){
+    e.preventDefault();
+    acFocusIdx = Math.min(acFocusIdx + 1, items.length - 1);
+    items.forEach((el, i) => el.classList.toggle('focused', i === acFocusIdx));
+  } else if(e.key === 'ArrowUp'){
+    e.preventDefault();
+    acFocusIdx = Math.max(acFocusIdx - 1, -1);
+    items.forEach((el, i) => el.classList.toggle('focused', i === acFocusIdx));
+  } else if(e.key === 'Enter'){
+    if(acFocusIdx >= 0 && acSuggestions[acFocusIdx]){
+      e.preventDefault();
+      selectAcItem(acSuggestions[acFocusIdx]);
+    } else {
+      hideAcDropdown();
+    }
+  } else if(e.key === 'Escape'){
+    hideAcDropdown();
+  }
+});
+
+searchInput.addEventListener('blur', () => {
+  setTimeout(hideAcDropdown, 160);
+});
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  VEHICLE INTELLIGENCE REPORT                                                 */
+/* ─────────────────────────────────────────────────────────────────────────── */
+let virCurrentMake = '';
+let virCurrentModel = '';
+let virCurrentYear = null;
+let virSelectedVariantIdx = 0;
+let virSpecData = null;
+
+function openVIR(make, model, year){
+  virCurrentMake  = make;
+  virCurrentModel = model;
+  virCurrentYear  = year || null;
+  virSelectedVariantIdx = 0;
+  virSpecData = null;
+  $('vir-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  loadVIRData();
+}
+
+function closeVIR(){
+  $('vir-modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+$('vir-modal').addEventListener('click', e => {
+  if(e.target === $('vir-modal')) closeVIR();
+});
+
+async function loadVIRData(){
+  const body = $('vir-body');
+  body.innerHTML = '<div class="vir-loading" id="vir-loading">⚡ Loading vehicle specifications…</div>';
+  try{
+    const params = new URLSearchParams({ make: virCurrentMake, model: virCurrentModel });
+    if(virCurrentYear) params.set('year', virCurrentYear);
+    const resp = await fetch(`/api/vehicle-specs?${params}`);
+    const data = await resp.json();
+    virSpecData = data;
+    if(data.success){
+      renderVIRContent(data);
+    } else {
+      renderVIRError(data);
+    }
+  } catch(e){
+    body.innerHTML = `<div class="vir-error">⚠️ Failed to load specifications. Please try again.</div>
+      <div class="vir-cta-row"><button class="vir-cta-primary" onclick="searchFromVIR()">🔍 Search Marketplace Instead</button></div>`;
+  }
+}
+
+function renderVIRError(data){
+  const body = $('vir-body');
+  const searchQuery = `${virCurrentMake} ${virCurrentModel}${virCurrentYear ? ' ' + virCurrentYear : ''}`;
+  body.innerHTML = `
+    <div class="vir-error">⚠️ ${esc(data.error || 'Specifications not available for this vehicle.')}</div>
+    <p style="color:#64748b;font-size:.83rem;margin-bottom:16px">We have verified specs for Kia Sportage, Toyota Corolla, Hyundai Tucson, Mercedes C180/C200, BMW 320i/318i, Nissan Sunny, and more.</p>
+    <div class="vir-cta-row">
+      <button class="vir-cta-primary" onclick="searchFromVIR()">🔍 Search "${esc(searchQuery)}" in Marketplace</button>
+      <button class="vir-cta-secondary" onclick="closeVIR()">✕ Close</button>
+    </div>`;
+}
+
+function renderVIRContent(data){
+  const body = $('vir-body');
+  const sv = (fieldObj) => fieldObj ? fieldObj.value : '—';
+  const tag = (fieldObj) => {
+    if(!fieldObj || fieldObj.value === null || fieldObj.value === undefined) return '';
+    const src = fieldObj.source;
+    if(src === 'verified') return '<span class="vir-tag-verified">✓ Verified</span>';
+    if(src === 'detected') return '<span class="vir-tag-detected">⚡ Detected</span>';
+    return '';
+  };
+
+  const variants = data.variants || [];
+  const dims = data.dimensions || {};
+
+  let variantTabsHtml = '';
+  if(variants.length > 1){
+    variantTabsHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      ${variants.map((v,i) => `<button class="vir-cta-secondary" style="font-size:.75rem;padding:6px 12px;${i===0?'border-color:var(--blue);color:#fff;background:rgba(56,189,248,.2)':''}" onclick="selectVIRVariant(${i})" id="vir-vtab-${i}">${esc(v.name)}</button>`).join('')}
+    </div>`;
+  }
+
+  let specsHtml = '';
+  if(variants.length > 0){
+    const v = variants[virSelectedVariantIdx] || variants[0];
+    specsHtml = `
+      <div class="vir-specs-grid" id="vir-specs-grid">
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Engine</div>
+          <div class="vir-spec-val">${esc(sv(v.displacement))} ${tag(v.displacement)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Cylinders</div>
+          <div class="vir-spec-val">${sv(v.cylinders)} cyl ${esc(sv(v.config))} ${tag(v.config)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Power</div>
+          <div class="vir-spec-val">${sv(v.hp)} hp ${tag(v.hp)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Torque</div>
+          <div class="vir-spec-val">${sv(v.torque_nm)} Nm ${tag(v.torque_nm)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Turbo</div>
+          <div class="vir-spec-val">${sv(v.turbo) === true ? '✓ Turbocharged' : 'Naturally Aspirated'} ${tag(v.turbo)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Fuel</div>
+          <div class="vir-spec-val">${esc(sv(v.fuel))} ${tag(v.fuel)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Transmission</div>
+          <div class="vir-spec-val">${esc(sv(v.transmission))} ${tag(v.transmission)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Drivetrain</div>
+          <div class="vir-spec-val">${esc(sv(v.drivetrain))} ${tag(v.drivetrain)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">0–100 km/h</div>
+          <div class="vir-spec-val">${sv(v.acceleration_0_100) !== '—' ? sv(v.acceleration_0_100) + 's' : '—'} ${tag(v.acceleration_0_100)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Top Speed</div>
+          <div class="vir-spec-val">${sv(v.top_speed_kmh) !== '—' ? sv(v.top_speed_kmh) + ' km/h' : '—'} ${tag(v.top_speed_kmh)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Fuel Economy</div>
+          <div class="vir-spec-val">${sv(v.fuel_economy_l100km) !== '—' ? sv(v.fuel_economy_l100km) + ' L/100km' : '—'} ${tag(v.fuel_economy_l100km)}</div>
+        </div>
+        <div class="vir-spec-item">
+          <div class="vir-spec-label">Tank</div>
+          <div class="vir-spec-val">${sv(v.tank_l) !== '—' ? sv(v.tank_l) + ' L' : '—'} ${tag(v.tank_l)}</div>
+        </div>
+      </div>`;
+  }
+
+  const searchQuery = `${virCurrentMake} ${virCurrentModel}${virCurrentYear ? ' ' + virCurrentYear : ''}`;
+
+  body.innerHTML = `
+    <div class="vir-identity">
+      <div class="vir-field">
+        <div class="vir-field-label">🏷️ Make / Model</div>
+        <div class="vir-field-val">${esc(data.make)} ${esc(data.model)} ${tag({value:data.make,source:'detected'})}</div>
+      </div>
+      <div class="vir-field">
+        <div class="vir-field-label">🔄 Generation</div>
+        <div class="vir-field-val">${esc(sv(data.generation))} ${tag(data.generation)}</div>
+      </div>
+      <div class="vir-field">
+        <div class="vir-field-label">🚗 Body / Segment</div>
+        <div class="vir-field-val">${esc(sv(data.body_type))} · ${esc(sv(data.segment))} ${tag(data.body_type)}</div>
+      </div>
+      <div class="vir-field">
+        <div class="vir-field-label">📅 Production Years</div>
+        <div class="vir-field-val">${esc(sv(data.production_years))} ${tag(data.production_years)}</div>
+      </div>
+      <div class="vir-field">
+        <div class="vir-field-label">🚪 Doors / Seats</div>
+        <div class="vir-field-val">${sv(data.doors)} doors · ${sv(data.seats)} seats ${tag(data.doors)}</div>
+      </div>
+      ${ virCurrentYear ? `<div class="vir-field"><div class="vir-field-label">📅 Year Requested</div><div class="vir-field-val">${virCurrentYear} <span class="vir-tag-detected">⚡ Detected</span></div></div>` : '' }
+    </div>
+
+    ${ dims && dims.length_mm && dims.length_mm.value ? `
+    <div class="vir-section-title">📐 Dimensions</div>
+    <div class="vir-dimensions">
+      <div class="vir-dim"><div class="vir-dim-val">${dims.length_mm.value}</div><div class="vir-dim-label">Length (mm)</div></div>
+      <div class="vir-dim"><div class="vir-dim-val">${dims.width_mm.value}</div><div class="vir-dim-label">Width (mm)</div></div>
+      <div class="vir-dim"><div class="vir-dim-val">${dims.height_mm.value}</div><div class="vir-dim-label">Height (mm)</div></div>
+      <div class="vir-dim"><div class="vir-dim-val">${dims.wheelbase_mm.value}</div><div class="vir-dim-label">Wheelbase (mm)</div></div>
+    </div>` : '' }
+
+    ${ variants.length > 0 ? `
+    <div class="vir-section-title">⚙️ Engine & Performance</div>
+    ${variantTabsHtml}
+    <div id="vir-specs-container">${specsHtml}</div>` : '' }
+
+    <div class="vir-cta-row">
+      <button class="vir-cta-primary" onclick="searchFromVIR()" id="vir-search-btn">🔍 Search "${esc(searchQuery)}" in Marketplace</button>
+      <button class="vir-cta-secondary" onclick="closeVIR()">✕ Close</button>
+    </div>
+
+    <div class="vir-disclaimer">
+      ⚠️ <strong>Data accuracy:</strong> Specifications marked <span class="vir-tag-verified" style="display:inline-block">✓ Verified</span> are sourced from the Apex Motors specification database.
+      Items marked <span class="vir-tag-detected" style="display:inline-block">⚡ Detected</span> were identified by computer vision and are not mechanically verified.
+      Year, trim level, and actual condition must be confirmed before any purchase decision.
+      <br><span style="color:#475569;margin-top:4px;display:block">Source: ${esc(data.spec_source || 'Apex Motors Specification Database')}</span>
+    </div>`;
+}
+
+function selectVIRVariant(idx){
+  virSelectedVariantIdx = idx;
+  if(!virSpecData) return;
+  // Update tab styling
+  virSpecData.variants.forEach((v, i) => {
+    const tab = document.getElementById(`vir-vtab-${i}`);
+    if(tab){
+      tab.style.borderColor = i === idx ? 'var(--blue)' : '';
+      tab.style.color       = i === idx ? '#fff' : '';
+      tab.style.background  = i === idx ? 'rgba(56,189,248,.2)' : '';
+    }
+  });
+  // Re-render specs
+  const container = document.getElementById('vir-specs-container');
+  if(!container) return;
+  const v = virSpecData.variants[idx];
+  const sv = (fieldObj) => fieldObj ? fieldObj.value : '—';
+  const tag = (fieldObj) => {
+    if(!fieldObj || fieldObj.value === null) return '';
+    return fieldObj.source === 'verified' ? '<span class="vir-tag-verified">✓ Verified</span>' : '';
+  };
+  container.innerHTML = `
+    <div class="vir-specs-grid">
+      <div class="vir-spec-item"><div class="vir-spec-label">Engine</div><div class="vir-spec-val">${esc(sv(v.displacement))} ${tag(v.displacement)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Cylinders</div><div class="vir-spec-val">${sv(v.cylinders)} cyl ${esc(sv(v.config))} ${tag(v.config)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Power</div><div class="vir-spec-val">${sv(v.hp)} hp ${tag(v.hp)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Torque</div><div class="vir-spec-val">${sv(v.torque_nm)} Nm ${tag(v.torque_nm)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Turbo</div><div class="vir-spec-val">${sv(v.turbo) === true ? '✓ Turbocharged' : 'N/A'} ${tag(v.turbo)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Fuel</div><div class="vir-spec-val">${esc(sv(v.fuel))} ${tag(v.fuel)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Transmission</div><div class="vir-spec-val">${esc(sv(v.transmission))} ${tag(v.transmission)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Drivetrain</div><div class="vir-spec-val">${esc(sv(v.drivetrain))} ${tag(v.drivetrain)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">0–100 km/h</div><div class="vir-spec-val">${sv(v.acceleration_0_100) !== '—' ? sv(v.acceleration_0_100)+'s' : '—'} ${tag(v.acceleration_0_100)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Top Speed</div><div class="vir-spec-val">${sv(v.top_speed_kmh) !== '—' ? sv(v.top_speed_kmh)+' km/h' : '—'} ${tag(v.top_speed_kmh)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Fuel Economy</div><div class="vir-spec-val">${sv(v.fuel_economy_l100km) !== '—' ? sv(v.fuel_economy_l100km)+' L/100km' : '—'} ${tag(v.fuel_economy_l100km)}</div></div>
+      <div class="vir-spec-item"><div class="vir-spec-label">Tank</div><div class="vir-spec-val">${sv(v.tank_l) !== '—' ? sv(v.tank_l)+' L' : '—'} ${tag(v.tank_l)}</div></div>
+    </div>`;
+}
+
+function searchFromVIR(){
+  const q = `${virCurrentMake} ${virCurrentModel}${virCurrentYear ? ' ' + virCurrentYear : ''}`;
+  closeVIR();
+  $('search-input').value = q;
+  initiateSearch(q);
+}
+
+/* Update showAnalysisPanel to add VIR button */
+const _origShowAnalysis = showAnalysisPanel;
+function showAnalysisPanel(data){
+  _origShowAnalysis(data);
+  // Parse make/model from label for VIR button
+  const label = (data.label || '').trim();
+  const words = label.split(/\s+/);
+  const make  = words[0] || '';
+  const model = words.slice(1).join(' ') || '';
+  // Add VIR button if not already there
+  const existing = document.getElementById('vir-open-btn');
+  if(existing) existing.remove();
+  if(make && model){
+    const btn = document.createElement('button');
+    btn.id = 'vir-open-btn';
+    btn.className = 'ap-correct-btn';
+    btn.style.cssText = 'margin-top:10px;width:100%;background:rgba(56,189,248,.15);border:1px solid rgba(56,189,248,.4);';
+    btn.type = 'button';
+    btn.textContent = '🔬 View Full Vehicle Intelligence Report';
+    btn.addEventListener('click', () => openVIR(make, model));
+    const apMain = document.querySelector('.ap-main');
+    if(apMain) apMain.appendChild(btn);
+  }
 }
 </script>
 </body>
