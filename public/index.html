@@ -602,7 +602,7 @@ function clearImage(){
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  IMAGE CLASSIFICATION                                                       */
 /* ─────────────────────────────────────────────────────────────────────────── */
-async function classifyImage(file){
+async function classifyImage(file, selectedCropId = null){
   clearError();
   const myReq = ++reqCounter;
 
@@ -617,6 +617,9 @@ async function classifyImage(file){
 
   const fd = new FormData();
   fd.append('image', file);
+  if(selectedCropId !== null && selectedCropId !== undefined){
+    fd.append('selected_crop_id', selectedCropId.toString());
+  }
 
   try{
     setSpinner('Analyzing vehicle with AI Vision…');
@@ -624,16 +627,31 @@ async function classifyImage(file){
     if(myReq !== reqCounter) return;
     const data = await resp.json();
 
-    if(resp.ok && data.success && data.label){
-      setSpinner('Vehicle identified! Loading market listings & specs…');
-      lastAnalysis = data;
-      showAnalysisPanel(data);
-      $('search-input').value = data.label;
-      initiateSearch(data.label, myReq);
-      return;
+    if(resp.ok && data.success){
+      // 1. Multiple vehicles detected: let user select which car to analyze
+      if(data.multiple_vehicles_detected && data.vehicles && data.vehicles.length > 1){
+        hideSpinner();
+        showMultiVehicleSelector(file, data.vehicles);
+        return;
+      }
+
+      // 2. Single vehicle identified or crop selected
+      if(data.label){
+        setSpinner('Vehicle identified! Loading market listings & specs…');
+        lastAnalysis = data;
+        showAnalysisPanel(data);
+        $('search-input').value = data.label;
+        initiateSearch(data.label, myReq);
+        return;
+      }
     }
 
     hideSpinner();
+
+    if(data.code === 'NON_CAR_IMAGE'){
+      setError(data.error || 'The uploaded image does not appear to contain a vehicle. Please upload a clear exterior photo of a car.');
+      return;
+    }
 
     if(resp.status === 422 || data.code === 'VEHICLE_NOT_IDENTIFIED'){
       setError('We couldn’t identify this vehicle reliably. Try another image showing the front or rear of the car clearly.');
@@ -653,10 +671,42 @@ async function classifyImage(file){
   }
 }
 
+function showMultiVehicleSelector(file, vehicles){
+  const ap = $('analysis-panel');
+  $('ap-vehicle').textContent = `${vehicles.length} Vehicles Detected`;
+  $('ap-conf').textContent = 'Select a vehicle';
+  $('ap-note').textContent = 'Multiple vehicles were detected in your photo. Please click on the car you would like to identify:';
+  $('ap-correct-input').value = '';
+
+  const altsEl = $('ap-alts');
+  altsEl.innerHTML = '';
+  const altsSection = $('ap-alts-section');
+  
+  vehicles.forEach((v, idx) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'display:inline-flex;flex-direction:column;align-items:center;gap:6px;background:rgba(15,23,42,.8);border:1px solid var(--blue);border-radius:10px;padding:8px;cursor:pointer;transition:transform .2s;';
+    card.innerHTML = `<img src="${v.preview_b64}" style="width:120px;height:80px;object-fit:cover;border-radius:6px" alt="Vehicle ${idx+1}">
+      <button class="ap-correct-btn" style="padding:4px 10px;font-size:.72rem" type="button">Inspect Car #${idx+1}</button>`;
+    card.addEventListener('click', () => {
+      classifyImage(file, v.crop_id);
+    });
+    altsEl.appendChild(card);
+  });
+
+  altsSection.style.display = 'block';
+  vis(ap, true);
+}
+
 function showAnalysisPanel(data){
   $('ap-vehicle').textContent = data.label;
   $('ap-conf').textContent = data.confidence ? `${data.confidence}% confidence` : '';
-  $('ap-note').textContent = data.note || 'Year, trim, and mechanical condition cannot be determined from appearance alone. Asking prices are not completed-sale prices.';
+  
+  if(data.is_uncertain){
+    $('ap-note').textContent = '⚠️ Identification uncertain — please select or confirm candidate model below:';
+  } else {
+    $('ap-note').textContent = data.note || 'Year, trim, and mechanical condition cannot be determined from appearance alone. Asking prices are not completed-sale prices.';
+  }
+
   $('ap-correct-input').value = data.label;
 
   const altsEl = $('ap-alts');

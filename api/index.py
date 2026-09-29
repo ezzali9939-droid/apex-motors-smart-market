@@ -9,6 +9,24 @@ import requests
 from bs4 import BeautifulSoup
 import numpy as np
 import joblib
+from pathlib import Path
+
+# Add project root directory to sys.path for services imports
+root_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
+from services.vision import (
+    prepare_image, detect_vehicle_rois, extract_visual_embedding,
+    compute_visual_similarity, crop_to_bytes, crop_to_b64,
+    call_hf_vision_api, call_openai_vision_api, parse_hf_label
+)
+from services.knowledge_base import (
+    resolve_vehicle_specs, parse_search_query, normalize_brand, VEHICLE_KNOWLEDGE_BASE
+)
+from services.marketplace import (
+    normalize_listing, apply_marketplace_filters
+)
 
 try:
     from PIL import Image, ImageOps
@@ -1159,8 +1177,12 @@ def classify_image():
             "error": "Empty file upload received."
         }), 400
 
-    # ── 3. Image decode & normalize ───────────────────────────────────────────
-    img_bytes, prep_error = _prepare_image_bytes(file)
+    # Optional selected crop ID from frontend when multiple cars are detected
+    selected_crop_id_raw = request.form.get("selected_crop_id")
+    selected_crop_id = int(selected_crop_id_raw) if (selected_crop_id_raw is not None and selected_crop_id_raw.isdigit()) else None
+
+    # ── 3. Image decode & EXIF transpose ─────────────────────────────────────
+    pil_img, prep_error = prepare_image(file)
     if prep_error:
         print(f"[classify] Image prep failed: {prep_error}")
         return jsonify({
@@ -1169,11 +1191,52 @@ def classify_image():
             "error": prep_error
         }), 400
 
-    # ── 4. Real AI Model Inference Pipeline ───────────────────────────────────
+    # ── 4. Vehicle Detection & Non-Car Rejection ──────────────────────────────
+    detection_res = detect_vehicle_rois(pil_img)
+    if not detection_res.get("is_car"):
+        return jsonify({
+            "success": False,
+            "code": "NON_CAR_IMAGE",
+            "error": detection_res.get("reason", "The uploaded image does not appear to contain a vehicle. Please upload a clear exterior photo of a car.")
+        }), 422
+
+    rois = detection_res.get("rois", [])
+
+    # Multi-vehicle detection flow: if multiple cars detected and user hasn't chosen one yet
+    if len(rois) > 1 and selected_crop_id is None:
+        vehicle_crops = []
+        for r_item in rois:
+            c_id = r_item["crop_id"]
+            bbox = r_item["bbox"]
+            vehicle_crops.append({
+                "crop_id": c_id,
+                "bbox": bbox,
+                "preview_b64": crop_to_b64(pil_img, bbox)
+            })
+        return jsonify({
+            "success": True,
+            "multiple_vehicles_detected": True,
+            "vehicle_count": len(vehicle_crops),
+            "vehicles": vehicle_crops,
+            "message": "Multiple vehicles detected in photo. Please select which vehicle to analyze."
+        }), 200
+
+    # Single vehicle or selected crop ROI
+    target_roi = rois[0] if (selected_crop_id is None or selected_crop_id >= len(rois)) else rois[selected_crop_id]
+    target_bbox = target_roi["bbox"]
+
+    # Crop to vehicle ROI & re-encode
+    img_bytes = crop_to_bytes(pil_img, target_bbox)
+    cropped_pil = pil_img.crop((target_bbox[0], target_bbox[1], target_bbox[2], target_bbox[3]))
+
+    # ── 5. Visual Similarity Feature Embedding ────────────────────────────────
+    visual_emb = extract_visual_embedding(cropped_pil)
+
+    # ── 6. Real AI Model Inference Pipeline ───────────────────────────────────
     # A. Try Hugging Face Inference API / Client first if HF_TOKEN is present
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
     if hf_token:
-        ai_result, ai_err = _call_hf_vision_api(img_bytes)
+        ai_result, ai_err = call_hf_vision_api(img_bytes)
         if ai_result and ai_result.get("data"):
             raw_list = ai_result["data"]
             top = raw_list[0]
@@ -1189,7 +1252,7 @@ def classify_image():
                     "raw_confidence": round(top_score * 100, 1)
                 }), 422
 
-            parsed_top = _parse_hf_label(top_label)
+            parsed_top = parse_hf_label(top_label)
 
             # Top-K real predictions with exact model output probabilities
             alternatives = []
@@ -1197,7 +1260,7 @@ def classify_image():
                 alt_label = item.get("label", "").strip()
                 alt_score = float(item.get("score", 0.0))
                 if alt_label and alt_score >= 0.03:
-                    parsed_alt = _parse_hf_label(alt_label)
+                    parsed_alt = parse_hf_label(alt_label)
                     alternatives.append({
                         "label": parsed_alt["display_label"],
                         "make": parsed_alt["make"],
@@ -1206,18 +1269,22 @@ def classify_image():
                         "confidence": round(alt_score * 100, 1)
                     })
 
+            is_uncertain = bool(top_score < 0.75 and len(alternatives) > 0)
+
             return jsonify({
                 "success": True,
+                "is_uncertain": is_uncertain,
                 "label": parsed_top["display_label"],
                 "make": parsed_top["make"],
                 "model": parsed_top["model"],
                 "year_detected": parsed_top["year_detected"],
                 "confidence": round(top_score * 100, 1),
                 "alternatives": alternatives,
+                "visual_embedding": visual_emb,
                 "engine": "huggingface",
                 "model_used": ai_result.get("model", "dima806/car_models_image_detection"),
                 "provider": ai_result.get("provider", "Hugging Face Inference API"),
-                "note": "Visual identification via trained computer vision model. Exact specs require separate lookup."
+                "note": "Uncertain identification — please select candidate model below." if is_uncertain else "Visual identification via trained computer vision model. Exact specs require separate lookup."
             }), 200
         
         if ai_err:
@@ -1226,7 +1293,7 @@ def classify_image():
     # B. Try OpenAI Multimodal Vision API if OPENAI_API_KEY is present
     openai_key = os.environ.get("OPENAI_API_KEY")
     if openai_key:
-        oai_res = _call_openai_vision_api(img_bytes)
+        oai_res = call_openai_vision_api(img_bytes)
         if oai_res and oai_res.get("is_vehicle") and oai_res.get("make"):
             conf = float(oai_res.get("confidence", 0.85))
             if conf < 0.40:
@@ -1254,8 +1321,11 @@ def classify_image():
                     "confidence": round(c_a * 100, 1)
                 })
 
+            is_uncertain = bool(conf < 0.75 and len(alts) > 0)
+
             return jsonify({
                 "success": True,
+                "is_uncertain": is_uncertain,
                 "label": label_str,
                 "make": make_str,
                 "model": model_str,
@@ -1263,10 +1333,11 @@ def classify_image():
                 "estimated_year_range": [oai_res.get("estimated_year_from"), oai_res.get("estimated_year_to")],
                 "confidence": round(conf * 100, 1),
                 "alternatives": alts,
+                "visual_embedding": visual_emb,
                 "engine": "openai_vision",
                 "model_used": "gpt-4o-mini",
                 "provider": "OpenAI Multimodal Vision API",
-                "note": "Visual identification via OpenAI Multimodal Vision AI."
+                "note": "Uncertain identification — please select candidate model below." if is_uncertain else "Visual identification via OpenAI Multimodal Vision AI."
             }), 200
 
     # C. No AI Provider Credentials Configured / Offline
