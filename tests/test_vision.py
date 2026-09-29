@@ -53,10 +53,9 @@ class TestVisionPipeline(unittest.TestCase):
             content_type='multipart/form-data'
         )
 
-        # Blank image must either be rejected as 422 VEHICLE_NOT_IDENTIFIED or 503 VISION_SERVICE_UNAVAILABLE (if no key)
         self.assertIn(response.status_code, (422, 503), f"Blank image returned unexpected status {response.status_code}")
         data = response.get_json()
-        self.assertFalse(data.get("success"), "Blank image classification success MUST be false")
+        self.assertFalse(data.get("vehicle_detected"), "Blank image vehicle_detected MUST be false")
 
     def test_04_negative_input_abstract_shape(self):
         """Test negative input: Abstract non-vehicle shape must not pass high-confidence classification"""
@@ -75,11 +74,10 @@ class TestVisionPipeline(unittest.TestCase):
 
         self.assertIn(response.status_code, (422, 503))
         data = response.get_json()
-        self.assertFalse(data.get("success"), "Non-vehicle shape classification success MUST be false")
+        self.assertFalse(data.get("vehicle_detected"), "Non-vehicle shape vehicle_detected MUST be false")
 
     def test_05_unconfigured_ai_uses_local_vision_fallback(self):
         """Verify that when no cloud AI provider keys exist in environment, local vision engine fallback activates with HTTP 200"""
-        # Save old env vars
         old_hf = os.environ.pop("HF_TOKEN", None)
         old_hf_alt = os.environ.pop("HUGGINGFACE_TOKEN", None)
         old_oai = os.environ.pop("OPENAI_API_KEY", None)
@@ -95,13 +93,74 @@ class TestVisionPipeline(unittest.TestCase):
             self.assertEqual(response.status_code, 200, "Unconfigured cloud AI must fall back to local vision engine with HTTP 200")
             data = response.get_json()
             self.assertTrue(data.get("success"))
+            self.assertTrue(data.get("vehicle_detected"))
             self.assertEqual(data.get("engine"), "local_vision_engine")
 
         finally:
-            # Restore env vars
             if old_hf: os.environ["HF_TOKEN"] = old_hf
             if old_hf_alt: os.environ["HUGGINGFACE_TOKEN"] = old_hf_alt
             if old_oai: os.environ["OPENAI_API_KEY"] = old_oai
+
+    def test_06_body_type_filtering_no_suv_in_coupe_alternatives(self):
+        """Verify body type filtering prevents SUVs (like Kia Sportage) from appearing as alternatives to a Coupe"""
+        old_hf = os.environ.pop("HF_TOKEN", None)
+        old_hf_alt = os.environ.pop("HUGGINGFACE_TOKEN", None)
+        old_oai = os.environ.pop("OPENAI_API_KEY", None)
+
+        try:
+            img = Image.open(self.sample_image_path).resize((800, 400))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG")
+            buf.seek(0)
+
+            response = self.app.post(
+                '/api/classify',
+                data={'image': (buf, 'coupe.jpg')},
+                content_type='multipart/form-data'
+            )
+
+            data = response.get_json()
+            self.assertEqual(response.status_code, 200)
+            alts = [alt.get("label", "").lower() for alt in data.get("alternatives", [])]
+            for alt_str in alts:
+                self.assertNotIn("sportage", alt_str, "Kia Sportage SUV MUST NOT appear as an alternative for a sports coupe!")
+                self.assertNotIn("tucson", alt_str, "Hyundai Tucson SUV MUST NOT appear as an alternative for a sports coupe!")
+        finally:
+            if old_hf: os.environ["HF_TOKEN"] = old_hf
+            if old_hf_alt: os.environ["HUGGINGFACE_TOKEN"] = old_hf_alt
+            if old_oai: os.environ["OPENAI_API_KEY"] = old_oai
+
+    def test_07_structured_vision_response(self):
+        """Verify response contains all required structured fields per specification"""
+        with open(self.sample_image_path, "rb") as img_file:
+            response = self.app.post(
+                '/api/classify',
+                data={'image': (img_file, 'car.jpg')},
+                content_type='multipart/form-data'
+            )
+
+        data = response.get_json()
+        self.assertIn("vehicle_detected", data)
+        self.assertIn("identification", data)
+        self.assertIn("confidence_breakdown", data)
+        self.assertIn("visual_evidence", data)
+        self.assertIn("ocr_evidence", data)
+        self.assertIn("alternatives", data)
+        self.assertIn("needs_confirmation", data)
+        self.assertIn("debug_info", data)
+
+    def test_08_specifications_lookup_separated(self):
+        """Verify /api/vehicle-specs returns strict specs object matching canonical vehicle catalog"""
+        resp = self.app.get("/api/vehicle-specs?make=Mercedes-Benz&model=AMG GT&year=2019")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertIn("vehicle_id", data)
+        self.assertIn("source_match", data)
+        self.assertIn("specifications", data)
+        specs = data["specifications"]
+        self.assertIsNotNone(specs.get("engine"))
+        self.assertIsNotNone(specs.get("horsepower"))
 
 if __name__ == "__main__":
     unittest.main()

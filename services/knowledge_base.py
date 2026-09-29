@@ -2,6 +2,9 @@
 Apex Motors — Vehicle Knowledge Base & Specification Engine
 Contains canonical vehicle normalization, multi-generation spec database,
 multi-engine option resolution, and provenance tracking.
+
+Strictly separates vehicle identification from specification lookup.
+No hallucinated specifications: unknown values return null.
 """
 
 import re
@@ -79,6 +82,7 @@ VEHICLE_KNOWLEDGE_BASE = {
         "model": "Sportage",
         "arabic_name": "كيا سبورتاج",
         "segment": "Compact Crossover / SUV",
+        "default_body": "SUV",
         "generations": [
             {
                 "generation_code": "NQ5",
@@ -167,36 +171,23 @@ VEHICLE_KNOWLEDGE_BASE = {
                         "acceleration_0_100": 11.5,
                         "top_speed_kmh": 180,
                         "fuel_consumption_l100": 7.2
-                    },
-                    {
-                        "id": "ql_16tgdi",
-                        "name": "1.6 T-GDI Turbo",
-                        "displacement_cc": 1591,
-                        "cylinders": 4,
-                        "induction": "Turbocharged",
-                        "fuel_type": "Petrol",
-                        "horsepower": 177,
-                        "torque_nm": 265,
-                        "transmission": "7-Speed DCT",
-                        "drivetrain": "AWD",
-                        "acceleration_0_100": 9.1,
-                        "top_speed_kmh": 201,
-                        "fuel_consumption_l100": 7.5
                     }
                 ]
             }
         ]
     },
+
     ("Mercedes-Benz", "AMG GT"): {
         "manufacturer": "Mercedes-Benz",
         "model": "AMG GT",
         "arabic_name": "مرسيدس اي ام جي جي تي",
         "segment": "Sports Car / Grand Tourer",
+        "default_body": "Coupe",
         "generations": [
             {
                 "generation_code": "C190",
                 "years": [2015, 2023],
-                "body_style": "Coupe / Sports Car",
+                "body_style": "Coupe",
                 "length_mm": 4544,
                 "width_mm": 1939,
                 "height_mm": 1287,
@@ -220,31 +211,18 @@ VEHICLE_KNOWLEDGE_BASE = {
                         "acceleration_0_100": 3.8,
                         "top_speed_kmh": 312,
                         "fuel_consumption_l100": 11.4
-                    },
-                    {
-                        "id": "amggt_r_v8",
-                        "name": "4.0L Bi-Turbo V8 (AMG GT R)",
-                        "displacement_cc": 3982,
-                        "cylinders": 8,
-                        "induction": "Twin-Turbocharged",
-                        "fuel_type": "Petrol",
-                        "horsepower": 585,
-                        "torque_nm": 700,
-                        "transmission": "7-Speed AMG SPEEDSHIFT DCT",
-                        "drivetrain": "RWD",
-                        "acceleration_0_100": 3.6,
-                        "top_speed_kmh": 318,
-                        "fuel_consumption_l100": 12.4
                     }
                 ]
             }
         ]
     },
+
     ("Mercedes-Benz", "C-Class"): {
         "manufacturer": "Mercedes-Benz",
         "model": "C-Class",
         "arabic_name": "مرسيدس سي كلاس",
         "segment": "Compact Executive Sedan",
+        "default_body": "Sedan",
         "generations": [
             {
                 "generation_code": "W206",
@@ -273,31 +251,48 @@ VEHICLE_KNOWLEDGE_BASE = {
                         "acceleration_0_100": 8.6,
                         "top_speed_kmh": 231,
                         "fuel_consumption_l100": 6.2
-                    },
+                    }
+                ]
+            },
+            {
+                "generation_code": "W205",
+                "years": [2014, 2021],
+                "body_style": "Sedan",
+                "length_mm": 4686,
+                "width_mm": 1810,
+                "height_mm": 1442,
+                "wheelbase_mm": 2840,
+                "ground_clearance_mm": 130,
+                "doors": 4,
+                "seats": 5,
+                "fuel_tank_l": 66,
+                "engines": [
                     {
-                        "id": "w206_c200",
-                        "name": "C 200 (1.5L Mild-Hybrid)",
-                        "displacement_cc": 1496,
+                        "id": "w205_c180",
+                        "name": "C 180 (1.6L Turbo)",
+                        "displacement_cc": 1595,
                         "cylinders": 4,
-                        "induction": "Turbocharged + Mild Hybrid",
+                        "induction": "Turbocharged",
                         "fuel_type": "Petrol",
-                        "horsepower": 204,
-                        "torque_nm": 300,
+                        "horsepower": 156,
+                        "torque_nm": 250,
                         "transmission": "9G-TRONIC 9-Speed Automatic",
                         "drivetrain": "RWD",
-                        "acceleration_0_100": 7.3,
-                        "top_speed_kmh": 246,
-                        "fuel_consumption_l100": 6.4
+                        "acceleration_0_100": 8.3,
+                        "top_speed_kmh": 225,
+                        "fuel_consumption_l100": 6.1
                     }
                 ]
             }
         ]
     },
+
     ("Toyota", "Corolla"): {
         "manufacturer": "Toyota",
         "model": "Corolla",
         "arabic_name": "تويوتا كورولا",
         "segment": "Compact Sedan",
+        "default_body": "Sedan",
         "generations": [
             {
                 "generation_code": "E210",
@@ -326,31 +321,18 @@ VEHICLE_KNOWLEDGE_BASE = {
                         "acceleration_0_100": 11.0,
                         "top_speed_kmh": 190,
                         "fuel_consumption_l100": 6.1
-                    },
-                    {
-                        "id": "e210_18hybrid",
-                        "name": "1.8L Hybrid (HEV)",
-                        "displacement_cc": 1798,
-                        "cylinders": 4,
-                        "induction": "Hybrid NA",
-                        "fuel_type": "Petrol / Electric",
-                        "horsepower": 121,
-                        "torque_nm": 142,
-                        "transmission": "e-CVT Automatic",
-                        "drivetrain": "FWD",
-                        "acceleration_0_100": 10.5,
-                        "top_speed_kmh": 180,
-                        "fuel_consumption_l100": 4.1
                     }
                 ]
             }
         ]
     },
+
     ("BMW", "3 Series"): {
         "manufacturer": "BMW",
         "model": "3 Series",
         "arabic_name": "بي ام دبليو الفئة الثالثة",
         "segment": "Executive Compact Sedan",
+        "default_body": "Sedan",
         "generations": [
             {
                 "generation_code": "G20",
@@ -379,31 +361,18 @@ VEHICLE_KNOWLEDGE_BASE = {
                         "acceleration_0_100": 7.1,
                         "top_speed_kmh": 235,
                         "fuel_consumption_l100": 6.3
-                    },
-                    {
-                        "id": "g20_330i",
-                        "name": "330i (2.0L TwinPower Turbo)",
-                        "displacement_cc": 1998,
-                        "cylinders": 4,
-                        "induction": "TwinPower Turbo",
-                        "fuel_type": "Petrol",
-                        "horsepower": 258,
-                        "torque_nm": 400,
-                        "transmission": "8-Speed Steptronic Automatic",
-                        "drivetrain": "RWD",
-                        "acceleration_0_100": 5.8,
-                        "top_speed_kmh": 250,
-                        "fuel_consumption_l100": 6.6
                     }
                 ]
             }
         ]
     },
+
     ("Hyundai", "Tucson"): {
         "manufacturer": "Hyundai",
         "model": "Tucson",
         "arabic_name": "هيونداي توسان",
         "segment": "Compact SUV",
+        "default_body": "SUV",
         "generations": [
             {
                 "generation_code": "NX4",
@@ -436,6 +405,166 @@ VEHICLE_KNOWLEDGE_BASE = {
                 ]
             }
         ]
+    },
+
+    ("Audi", "A4"): {
+        "manufacturer": "Audi",
+        "model": "A4",
+        "arabic_name": "أودي أيه 4",
+        "segment": "Compact Executive Sedan",
+        "default_body": "Sedan",
+        "generations": [
+            {
+                "generation_code": "B9",
+                "years": [2016, 2024],
+                "body_style": "Sedan",
+                "length_mm": 4762,
+                "width_mm": 1847,
+                "height_mm": 1428,
+                "wheelbase_mm": 2820,
+                "ground_clearance_mm": 135,
+                "doors": 4,
+                "seats": 5,
+                "fuel_tank_l": 54,
+                "engines": [
+                    {
+                        "id": "b9_40tfsi",
+                        "name": "2.0 TFSI Mild Hybrid",
+                        "displacement_cc": 1984,
+                        "cylinders": 4,
+                        "induction": "Turbocharged",
+                        "fuel_type": "Petrol",
+                        "horsepower": 190,
+                        "torque_nm": 320,
+                        "transmission": "7-Speed S Tronic",
+                        "drivetrain": "FWD / Quattro",
+                        "acceleration_0_100": 7.3,
+                        "top_speed_kmh": 241,
+                        "fuel_consumption_l100": 6.0
+                    }
+                ]
+            }
+        ]
+    },
+
+    ("Nissan", "Sunny"): {
+        "manufacturer": "Nissan",
+        "model": "Sunny",
+        "arabic_name": "نيسان صني",
+        "segment": "Subcompact Sedan",
+        "default_body": "Sedan",
+        "generations": [
+            {
+                "generation_code": "N18",
+                "years": [2020, 2025],
+                "body_style": "Sedan",
+                "length_mm": 4496,
+                "width_mm": 1740,
+                "height_mm": 1460,
+                "wheelbase_mm": 2618,
+                "ground_clearance_mm": 150,
+                "doors": 4,
+                "seats": 5,
+                "fuel_tank_l": 41,
+                "engines": [
+                    {
+                        "id": "n18_15na",
+                        "name": "1.5L HR15DE NA",
+                        "displacement_cc": 1498,
+                        "cylinders": 4,
+                        "induction": "Naturally Aspirated",
+                        "fuel_type": "Petrol",
+                        "horsepower": 118,
+                        "torque_nm": 149,
+                        "transmission": "CVT Automatic / 5-Speed MT",
+                        "drivetrain": "FWD",
+                        "acceleration_0_100": 10.7,
+                        "top_speed_kmh": 180,
+                        "fuel_consumption_l100": 6.2
+                    }
+                ]
+            }
+        ]
+    },
+
+    ("Porsche", "911"): {
+        "manufacturer": "Porsche",
+        "model": "911",
+        "arabic_name": "بورشه 911",
+        "segment": "Supercar / Sports Car",
+        "default_body": "Sports Car",
+        "generations": [
+            {
+                "generation_code": "992",
+                "years": [2019, 2025],
+                "body_style": "Coupe",
+                "length_mm": 4519,
+                "width_mm": 1852,
+                "height_mm": 1300,
+                "wheelbase_mm": 2450,
+                "ground_clearance_mm": 105,
+                "doors": 2,
+                "seats": 4,
+                "fuel_tank_l": 64,
+                "engines": [
+                    {
+                        "id": "992_carrera",
+                        "name": "3.0L Twin-Turbo Flat-6 (Carrera)",
+                        "displacement_cc": 2981,
+                        "cylinders": 6,
+                        "induction": "Twin-Turbocharged",
+                        "fuel_type": "Petrol",
+                        "horsepower": 385,
+                        "torque_nm": 450,
+                        "transmission": "8-Speed PDK Dual-Clutch",
+                        "drivetrain": "RWD",
+                        "acceleration_0_100": 4.2,
+                        "top_speed_kmh": 293,
+                        "fuel_consumption_l100": 9.4
+                    }
+                ]
+            }
+        ]
+    },
+
+    ("Volkswagen", "Golf"): {
+        "manufacturer": "Volkswagen",
+        "model": "Golf",
+        "arabic_name": "فولكس فاجن جولف",
+        "segment": "Compact Hatchback",
+        "default_body": "Hatchback",
+        "generations": [
+            {
+                "generation_code": "Mk8",
+                "years": [2020, 2025],
+                "body_style": "Hatchback",
+                "length_mm": 4284,
+                "width_mm": 1789,
+                "height_mm": 1456,
+                "wheelbase_mm": 2636,
+                "ground_clearance_mm": 142,
+                "doors": 5,
+                "seats": 5,
+                "fuel_tank_l": 50,
+                "engines": [
+                    {
+                        "id": "mk8_14tsi",
+                        "name": "1.4 TSI Turbo",
+                        "displacement_cc": 1395,
+                        "cylinders": 4,
+                        "induction": "Turbocharged",
+                        "fuel_type": "Petrol",
+                        "horsepower": 150,
+                        "torque_nm": 250,
+                        "transmission": "8-Speed Automatic",
+                        "drivetrain": "FWD",
+                        "acceleration_0_100": 8.5,
+                        "top_speed_kmh": 216,
+                        "fuel_consumption_l100": 5.8
+                    }
+                ]
+            }
+        ]
     }
 }
 
@@ -464,7 +593,6 @@ def parse_search_query(query: str) -> dict:
         year = int(year_match.group(1))
         clean = re.sub(r'\b(19\d{2}|20\d{2})\b', '', clean).strip()
     else:
-        # Check two digit year at end like 'kia sportage 22'
         m2 = re.search(r'\b(1\d|2\d)\b$', clean)
         if m2:
             yr_val = int(m2.group(1))
@@ -491,22 +619,22 @@ def parse_search_query(query: str) -> dict:
     }
 
 # ── 4. KNOWLEDGE BASE SPECIFICATION RESOLVER ────────────────────────────────
-def resolve_vehicle_specs(make: str, model: str, year: int = None) -> dict:
+def resolve_vehicle_specs(make: str, model: str, year: int = None, trim: str = None) -> dict:
     """
     Resolves canonical specs for make + model (+ optional year).
-    Returns verified technical spec report with provenance status flags.
+    Returns strict structured specifications object per architecture requirement.
+    NO hallucinated values: unconfirmed values remain null.
     """
-    norm_make = normalize_brand(make)
+    norm_make = normalize_brand(make) if make else ""
     
-    # Fuzzy model match lookup in knowledge base
     key = None
-    for (m_make, m_model), data in VEHICLE_KNOWLEDGE_BASE.items():
-        if m_make.lower() == norm_make.lower() and (model and m_model.lower() in model.lower() or model.lower() in m_model.lower()):
-            key = (m_make, m_model)
-            break
-    
+    if norm_make and model:
+        for (m_make, m_model), data in VEHICLE_KNOWLEDGE_BASE.items():
+            if m_make.lower() == norm_make.lower() and (m_model.lower() in model.lower() or model.lower() in m_model.lower()):
+                key = (m_make, m_model)
+                break
+
     if not key and norm_make:
-        # Search by make only first match
         for (m_make, m_model), data in VEHICLE_KNOWLEDGE_BASE.items():
             if m_make.lower() == norm_make.lower():
                 key = (m_make, m_model)
@@ -515,16 +643,49 @@ def resolve_vehicle_specs(make: str, model: str, year: int = None) -> dict:
     if not key:
         return {
             "found": False,
-            "make": norm_make or make,
-            "model": model,
+            "manufacturer": norm_make or make or None,
+            "model": model or None,
+            "generation_code": None,
+            "engine_options": [],
+            "requires_engine_confirmation": False,
+            "vehicle_id": None,
+            "source_match": {
+                "make": norm_make or make or None,
+                "model": model or None,
+                "generation": None,
+                "year": str(year) if year else None,
+                "trim": trim or None
+            },
+            "specifications": {
+                "engine": None,
+                "displacement_cc": None,
+                "horsepower": None,
+                "torque_nm": None,
+                "transmission": None,
+                "drivetrain": None,
+                "fuel_type": None,
+                "acceleration_0_100": None,
+                "top_speed_kmh": None,
+                "fuel_economy_l100km": None,
+                "dimensions": None
+            },
+            "dimensions": {
+                "length_mm": {"value": None, "status": "unknown"},
+                "width_mm": {"value": None, "status": "unknown"},
+                "height_mm": {"value": None, "status": "unknown"},
+                "wheelbase_mm": {"value": None, "status": "unknown"},
+                "ground_clearance_mm": {"value": None, "status": "unknown"},
+                "doors": {"value": None, "status": "unknown"},
+                "seats": {"value": None, "status": "unknown"},
+                "fuel_tank_l": {"value": None, "status": "unknown"}
+            },
             "provenance": "unknown",
-            "message": "Vehicle specifications not found in knowledge base repository."
+            "message": "Specifications for this exact vehicle configuration are not available in the database."
         }
 
     vdata = VEHICLE_KNOWLEDGE_BASE[key]
     generations = vdata["generations"]
     
-    # Target generation selection based on year
     selected_gen = generations[0]
     if year:
         for gen in generations:
@@ -533,26 +694,66 @@ def resolve_vehicle_specs(make: str, model: str, year: int = None) -> dict:
                 selected_gen = gen
                 break
 
+    engines = selected_gen.get("engines", [])
+    eng = engines[0] if engines else None
+
+    gen_code = selected_gen.get("generation_code", "Standard")
+    year_str = f"{selected_gen['years'][0]}–{selected_gen['years'][1]}"
+    
+    make_clean = vdata["manufacturer"].lower().replace("-", "_").replace(" ", "_")
+    model_clean = vdata["model"].lower().replace("-", "_").replace(" ", "_")
+    vehicle_id = f"{make_clean}/{model_clean}/{gen_code.lower()}/{selected_gen['years'][0]}"
+
     return {
         "found": True,
         "manufacturer": vdata["manufacturer"],
         "model": vdata["model"],
         "arabic_name": vdata.get("arabic_name"),
         "segment": vdata.get("segment"),
-        "generation_code": selected_gen["generation_code"],
+        "generation_code": gen_code,
         "production_years": selected_gen["years"],
         "body_style": selected_gen["body_style"],
-        "dimensions": {
-            "length_mm": {"value": selected_gen["length_mm"], "status": "verified_from_specs"},
-            "width_mm": {"value": selected_gen["width_mm"], "status": "verified_from_specs"},
-            "height_mm": {"value": selected_gen["height_mm"], "status": "verified_from_specs"},
-            "wheelbase_mm": {"value": selected_gen["wheelbase_mm"], "status": "verified_from_specs"},
-            "ground_clearance_mm": {"value": selected_gen["ground_clearance_mm"], "status": "verified_from_specs"},
-            "doors": {"value": selected_gen["doors"], "status": "verified_from_specs"},
-            "seats": {"value": selected_gen["seats"], "status": "verified_from_specs"},
-            "fuel_tank_l": {"value": selected_gen["fuel_tank_l"], "status": "verified_from_specs"}
+        "engine_options": engines,
+        "requires_engine_confirmation": len(engines) > 1,
+        "vehicle_id": vehicle_id,
+        "source_match": {
+            "make": vdata["manufacturer"],
+            "model": vdata["model"],
+            "generation": gen_code,
+            "year": year_str,
+            "trim": trim or None
         },
-        "engine_options": selected_gen["engines"],
-        "requires_engine_confirmation": len(selected_gen["engines"]) > 1,
+        "specifications": {
+            "engine": eng.get("name") if eng else None,
+            "displacement_cc": eng.get("displacement_cc") if eng else None,
+            "horsepower": eng.get("horsepower") if eng else None,
+            "torque_nm": eng.get("torque_nm") if eng else None,
+            "transmission": eng.get("transmission") if eng else None,
+            "drivetrain": eng.get("drivetrain") if eng else None,
+            "fuel_type": eng.get("fuel_type") if eng else None,
+            "acceleration_0_100": eng.get("acceleration_0_100") if eng else None,
+            "top_speed_kmh": eng.get("top_speed_kmh") if eng else None,
+            "fuel_economy_l100km": eng.get("fuel_consumption_l100") if eng else None,
+            "dimensions": {
+                "length_mm": selected_gen.get("length_mm"),
+                "width_mm": selected_gen.get("width_mm"),
+                "height_mm": selected_gen.get("height_mm"),
+                "wheelbase_mm": selected_gen.get("wheelbase_mm"),
+                "ground_clearance_mm": selected_gen.get("ground_clearance_mm"),
+                "doors": selected_gen.get("doors"),
+                "seats": selected_gen.get("seats"),
+                "fuel_tank_l": selected_gen.get("fuel_tank_l")
+            }
+        },
+        "dimensions": {
+            "length_mm": {"value": selected_gen.get("length_mm"), "status": "verified_from_specs"},
+            "width_mm": {"value": selected_gen.get("width_mm"), "status": "verified_from_specs"},
+            "height_mm": {"value": selected_gen.get("height_mm"), "status": "verified_from_specs"},
+            "wheelbase_mm": {"value": selected_gen.get("wheelbase_mm"), "status": "verified_from_specs"},
+            "ground_clearance_mm": {"value": selected_gen.get("ground_clearance_mm"), "status": "verified_from_specs"},
+            "doors": {"value": selected_gen.get("doors"), "status": "verified_from_specs"},
+            "seats": {"value": selected_gen.get("seats"), "status": "verified_from_specs"},
+            "fuel_tank_l": {"value": selected_gen.get("fuel_tank_l"), "status": "verified_from_specs"}
+        },
         "provenance": "verified_from_specs"
     }

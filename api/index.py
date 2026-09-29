@@ -20,7 +20,7 @@ from services.vision import (
     prepare_image, detect_vehicle_rois, extract_visual_embedding,
     compute_visual_similarity, crop_to_bytes, crop_to_b64,
     call_hf_vision_api, call_openai_vision_api, parse_hf_label,
-    classify_vehicle_local
+    run_vision_pipeline
 )
 from services.knowledge_base import (
     resolve_vehicle_specs, parse_search_query, normalize_brand, VEHICLE_KNOWLEDGE_BASE
@@ -856,60 +856,77 @@ def suggest():
 
 @app.route("/api/vehicle-specs", methods=["GET"])
 def vehicle_specs():
-    make = request.args.get("make","").strip().lower()
-    model = request.args.get("model","").strip().lower()
-    year = request.args.get("year","").strip()
+    make = request.args.get("make","").strip()
+    model = request.args.get("model","").strip()
+    year_raw = request.args.get("year","").strip()
+    trim = request.args.get("trim","").strip() or None
+    year = int(year_raw) if year_raw.isdigit() else None
+
     if not make or not model:
         return jsonify({"success":False,"error":"make and model are required"}), 400
-    model_clean = re.sub(r"\s+","",model)
-    key_variants = [f"{make}_{model}",f"{make}_{model_clean}",f"{make}_{model.replace('-','').replace(' ','')}"]
-    spec = None
+
+    resolved = resolve_vehicle_specs(make, model, year=year, trim=trim)
+
+    make_clean = make.lower()
+    model_clean = re.sub(r"\s+","",model.lower())
+    key_variants = [f"{make_clean}_{model_clean}", f"{make_clean}_{model.lower()}"]
+    legacy_spec = None
     for k in key_variants:
         if k in VEHICLE_SPECS_DB:
-            spec = VEHICLE_SPECS_DB[k]; break
-    if spec is None:
+            legacy_spec = VEHICLE_SPECS_DB[k]; break
+    if legacy_spec is None:
         for db_key, db_val in VEHICLE_SPECS_DB.items():
             db_make, _, db_model = db_key.partition("_")
-            if db_make == make and (model in db_model or db_model in model or model_clean in db_model):
-                spec = db_val; break
-    if spec is None:
-        return jsonify({"success":False,"error":f"No specification data found for {make} {model}. Try searching the marketplace directly.","make":make.title(),"model":model.title(),"year":year or None}), 404
+            if db_make == make_clean and (model.lower() in db_model or db_model in model.lower()):
+                legacy_spec = db_val; break
+
     variants_out = []
-    for v in spec.get("variants",[]):
-        variants_out.append({
-            "name": v["name"],
-            "displacement": {"value":v["displacement"],"source":"verified"},
-            "cylinders": {"value":v["cylinders"],"source":"verified"},
-            "config": {"value":v["config"],"source":"verified"},
-            "turbo": {"value":v["turbo"],"source":"verified"},
-            "fuel": {"value":v["fuel"],"source":"verified"},
-            "hp": {"value":v["hp"],"source":"verified"},
-            "torque_nm": {"value":v["torque_nm"],"source":"verified"},
-            "transmission": {"value":v["transmission"],"source":"verified"},
-            "drivetrain": {"value":v["drivetrain"],"source":"verified"},
-            "acceleration_0_100": {"value":v.get("acceleration_0_100"),"source":"verified" if v.get("acceleration_0_100") else "unknown"},
-            "top_speed_kmh": {"value":v.get("top_speed_kmh"),"source":"verified" if v.get("top_speed_kmh") else "unknown"},
-            "fuel_economy_l100km": {"value":v.get("fuel_economy_l100km"),"source":"verified" if v.get("fuel_economy_l100km") else "unknown"},
-            "tank_l": {"value":v.get("tank_l"),"source":"verified" if v.get("tank_l") else "unknown"},
-        })
-    dims = spec.get("dimensions",{})
+    if legacy_spec:
+        for v in legacy_spec.get("variants", []):
+            variants_out.append({
+                "name": v["name"],
+                "displacement": {"value": v["displacement"], "source": "verified"},
+                "cylinders": {"value": v["cylinders"], "source": "verified"},
+                "config": {"value": v["config"], "source": "verified"},
+                "turbo": {"value": v["turbo"], "source": "verified"},
+                "fuel": {"value": v["fuel"], "source": "verified"},
+                "hp": {"value": v["hp"], "source": "verified"},
+                "torque_nm": {"value": v["torque_nm"], "source": "verified"},
+                "transmission": {"value": v["transmission"], "source": "verified"},
+                "drivetrain": {"value": v["drivetrain"], "source": "verified"},
+                "acceleration_0_100": {"value": v.get("acceleration_0_100"), "source": "verified" if v.get("acceleration_0_100") else "unknown"},
+                "top_speed_kmh": {"value": v.get("top_speed_kmh"), "source": "verified" if v.get("top_speed_kmh") else "unknown"},
+                "fuel_economy_l100km": {"value": v.get("fuel_economy_l100km"), "source": "verified" if v.get("fuel_economy_l100km") else "unknown"},
+                "tank_l": {"value": v.get("tank_l"), "source": "verified" if v.get("tank_l") else "unknown"},
+            })
+
+    spec_output = resolved.get("specifications", {})
+    source_match = resolved.get("source_match", {})
+    dims = legacy_spec.get("dimensions", {}) if legacy_spec else (spec_output.get("dimensions") or {})
+
     return jsonify({
-        "success":True,"make":spec["make"],"model":spec["model"],
-        "generation":{"value":spec.get("generation",""),"source":"verified"},
-        "body_type":{"value":spec.get("body_type",""),"source":"verified"},
-        "doors":{"value":spec.get("doors"),"source":"verified"},
-        "seats":{"value":spec.get("seats"),"source":"verified"},
-        "production_years":{"value":spec.get("production_years",""),"source":"verified"},
-        "segment":{"value":spec.get("segment",""),"source":"verified"},
-        "dimensions":{
-            "length_mm":{"value":dims.get("length_mm"),"source":"verified" if dims.get("length_mm") else "unknown"},
-            "width_mm":{"value":dims.get("width_mm"),"source":"verified" if dims.get("width_mm") else "unknown"},
-            "height_mm":{"value":dims.get("height_mm"),"source":"verified" if dims.get("height_mm") else "unknown"},
-            "wheelbase_mm":{"value":dims.get("wheelbase_mm"),"source":"verified" if dims.get("wheelbase_mm") else "unknown"},
+        "success": True,
+        "vehicle_id": resolved.get("vehicle_id"),
+        "source_match": source_match,
+        "specifications": spec_output,
+        "make": source_match.get("make") or make,
+        "model": source_match.get("model") or model,
+        "generation": {"value": source_match.get("generation") or "", "source": "verified" if resolved.get("found") else "unconfirmed"},
+        "body_type": {"value": legacy_spec.get("body_type") if legacy_spec else "", "source": "verified" if legacy_spec else "unconfirmed"},
+        "doors": {"value": legacy_spec.get("doors") if legacy_spec else None, "source": "verified" if legacy_spec else "unconfirmed"},
+        "seats": {"value": legacy_spec.get("seats") if legacy_spec else None, "source": "verified" if legacy_spec else "unconfirmed"},
+        "production_years": {"value": source_match.get("year") or "", "source": "verified" if resolved.get("found") else "unconfirmed"},
+        "segment": {"value": legacy_spec.get("segment") if legacy_spec else "", "source": "verified" if legacy_spec else "unconfirmed"},
+        "dimensions": {
+            "length_mm": {"value": dims.get("length_mm"), "source": "verified" if dims.get("length_mm") else "unknown"},
+            "width_mm": {"value": dims.get("width_mm"), "source": "verified" if dims.get("width_mm") else "unknown"},
+            "height_mm": {"value": dims.get("height_mm"), "source": "verified" if dims.get("height_mm") else "unknown"},
+            "wheelbase_mm": {"value": dims.get("wheelbase_mm"), "source": "verified" if dims.get("wheelbase_mm") else "unknown"},
         },
-        "variants":variants_out,"year_requested":year or None,
-        "spec_source":"Apex Motors Verified Specification Database",
-    })
+        "variants": variants_out,
+        "year_requested": year or None,
+        "spec_source": "Apex Motors Verified Specification Database" if resolved.get("found") else "Unconfirmed Specification Lookup"
+    }), 200
 
 @app.route("/api/image-proxy", methods=["GET"])
 def image_proxy():
@@ -1158,6 +1175,7 @@ def classify_image():
     if not HAS_PIL or Image is None:
         return jsonify({
             "success": False,
+            "vehicle_detected": False,
             "code": "INVALID_IMAGE",
             "error": "Server-side image processing library unavailable (PIL/Pillow not installed)."
         }), 500
@@ -1166,6 +1184,7 @@ def classify_image():
     if "image" not in request.files:
         return jsonify({
             "success": False,
+            "vehicle_detected": False,
             "code": "INVALID_IMAGE",
             "error": "No image file received. The field name must be 'image'."
         }), 400
@@ -1174,11 +1193,11 @@ def classify_image():
     if not file or file.filename == "":
         return jsonify({
             "success": False,
+            "vehicle_detected": False,
             "code": "INVALID_IMAGE",
             "error": "Empty file upload received."
         }), 400
 
-    # Optional selected crop ID from frontend when multiple cars are detected
     selected_crop_id_raw = request.form.get("selected_crop_id")
     selected_crop_id = int(selected_crop_id_raw) if (selected_crop_id_raw is not None and selected_crop_id_raw.isdigit()) else None
 
@@ -1188,22 +1207,24 @@ def classify_image():
         print(f"[classify] Image prep failed: {prep_error}")
         return jsonify({
             "success": False,
+            "vehicle_detected": False,
             "code": "INVALID_IMAGE",
             "error": prep_error
         }), 400
 
-    # ── 4. Vehicle Detection & Non-Car Rejection ──────────────────────────────
+    # ── 4. STAGE 1: Vehicle Detection & Non-Car Rejection ─────────────────────
     detection_res = detect_vehicle_rois(pil_img)
     if not detection_res.get("is_car"):
         return jsonify({
             "success": False,
+            "vehicle_detected": False,
             "code": "NON_CAR_IMAGE",
             "error": detection_res.get("reason", "The uploaded image does not appear to contain a vehicle. Please upload a clear exterior photo of a car.")
         }), 422
 
     rois = detection_res.get("rois", [])
 
-    # Multi-vehicle detection flow: if multiple cars detected and user hasn't chosen one yet
+    # Multi-vehicle detection flow
     if len(rois) > 1 and selected_crop_id is None:
         vehicle_crops = []
         for r_item in rois:
@@ -1216,135 +1237,66 @@ def classify_image():
             })
         return jsonify({
             "success": True,
+            "vehicle_detected": True,
             "multiple_vehicles_detected": True,
             "vehicle_count": len(vehicle_crops),
             "vehicles": vehicle_crops,
             "message": "Multiple vehicles detected in photo. Please select which vehicle to analyze."
         }), 200
 
-    # Single vehicle or selected crop ROI
     target_roi = rois[0] if (selected_crop_id is None or selected_crop_id >= len(rois)) else rois[selected_crop_id]
     target_bbox = target_roi["bbox"]
 
-    # Crop to vehicle ROI & re-encode
     img_bytes = crop_to_bytes(pil_img, target_bbox)
     cropped_pil = pil_img.crop((target_bbox[0], target_bbox[1], target_bbox[2], target_bbox[3]))
 
-    # ── 5. Visual Similarity Feature Embedding ────────────────────────────────
     visual_emb = extract_visual_embedding(cropped_pil)
 
-    # ── 6. Real AI Model Inference Pipeline ───────────────────────────────────
-    # A. Try Hugging Face Inference API / Client first if HF_TOKEN is present
-    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
-    if hf_token:
-        ai_result, ai_err = call_hf_vision_api(img_bytes)
-        if ai_result and ai_result.get("data"):
-            raw_list = ai_result["data"]
-            top = raw_list[0]
-            top_label = top.get("label", "").strip()
-            top_score = float(top.get("score", 0.0))
+    # ── 5. STAGES 2-5: Rebuilt Multi-Stage Recognition Pipeline ───────────────
+    vision_res = run_vision_pipeline(cropped_pil, img_bytes, target_bbox)
 
-            # Strictly enforce confidence threshold: score < 0.40 -> VEHICLE_NOT_IDENTIFIED
-            if top_score < 0.40 or not top_label:
-                return jsonify({
-                    "success": False,
-                    "code": "VEHICLE_NOT_IDENTIFIED",
-                    "error": "Vehicle not identified with sufficient confidence. Try uploading a clearer exterior photo showing the front or rear of the car.",
-                    "raw_confidence": round(top_score * 100, 1)
-                }), 422
+    if not vision_res.get("vehicle_detected") or not vision_res.get("identification"):
+        return jsonify({
+            "success": False,
+            "vehicle_detected": False,
+            "code": "VEHICLE_NOT_IDENTIFIED",
+            "error": vision_res.get("error", "Vehicle could not be identified reliably. Please upload a clearer photo."),
+            "identification": None,
+            "confidence": vision_res.get("confidence"),
+            "visual_evidence": vision_res.get("visual_evidence", []),
+            "ocr_evidence": vision_res.get("ocr_evidence", []),
+            "alternatives": [],
+            "needs_confirmation": False,
+            "debug_info": vision_res.get("debug_info", {})
+        }), 422
 
-            parsed_top = parse_hf_label(top_label)
+    ident = vision_res["identification"]
+    conf_obj = vision_res["confidence"]
+    label_str = f"{ident['make']} {ident['model']}".strip()
+    conf_percent = round(conf_obj["overall"] * 100, 1)
 
-            # Top-K real predictions with exact model output probabilities
-            alternatives = []
-            for item in raw_list[1:6]:
-                alt_label = item.get("label", "").strip()
-                alt_score = float(item.get("score", 0.0))
-                if alt_label and alt_score >= 0.03:
-                    parsed_alt = parse_hf_label(alt_label)
-                    alternatives.append({
-                        "label": parsed_alt["display_label"],
-                        "make": parsed_alt["make"],
-                        "model": parsed_alt["model"],
-                        "year_detected": parsed_alt["year_detected"],
-                        "confidence": round(alt_score * 100, 1)
-                    })
-
-            is_uncertain = bool(top_score < 0.75 and len(alternatives) > 0)
-
-            return jsonify({
-                "success": True,
-                "is_uncertain": is_uncertain,
-                "label": parsed_top["display_label"],
-                "make": parsed_top["make"],
-                "model": parsed_top["model"],
-                "year_detected": parsed_top["year_detected"],
-                "confidence": round(top_score * 100, 1),
-                "alternatives": alternatives,
-                "visual_embedding": visual_emb,
-                "engine": "huggingface",
-                "model_used": ai_result.get("model", "dima806/car_models_image_detection"),
-                "provider": ai_result.get("provider", "Hugging Face Inference API"),
-                "note": "Uncertain identification — please select candidate model below." if is_uncertain else "Visual identification via trained computer vision model. Exact specs require separate lookup."
-            }), 200
-        
-        if ai_err:
-            return jsonify(ai_err), ai_err.get("status_code", 503)
-
-    # B. Try OpenAI Multimodal Vision API if OPENAI_API_KEY is present
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    if openai_key:
-        oai_res = call_openai_vision_api(img_bytes)
-        if oai_res and oai_res.get("is_vehicle") and oai_res.get("make"):
-            conf = float(oai_res.get("confidence", 0.85))
-            if conf < 0.40:
-                return jsonify({
-                    "success": False,
-                    "code": "VEHICLE_NOT_IDENTIFIED",
-                    "error": "Vehicle not identified with sufficient confidence.",
-                    "raw_confidence": round(conf * 100, 1)
-                }), 422
-
-            make_str = str(oai_res["make"])
-            model_str = str(oai_res.get("model", ""))
-            label_str = f"{make_str} {model_str}".strip()
-
-            alts = []
-            for alt in oai_res.get("alternatives", []):
-                m_a = alt.get("make", "")
-                md_a = alt.get("model", "")
-                c_a = float(alt.get("confidence", 0.1))
-                alts.append({
-                    "label": f"{m_a} {md_a}".strip(),
-                    "make": m_a,
-                    "model": md_a,
-                    "year_detected": None,
-                    "confidence": round(c_a * 100, 1)
-                })
-
-            is_uncertain = bool(conf < 0.75 and len(alts) > 0)
-
-            return jsonify({
-                "success": True,
-                "is_uncertain": is_uncertain,
-                "label": label_str,
-                "make": make_str,
-                "model": model_str,
-                "year_detected": None,
-                "estimated_year_range": [oai_res.get("estimated_year_from"), oai_res.get("estimated_year_to")],
-                "confidence": round(conf * 100, 1),
-                "alternatives": alts,
-                "visual_embedding": visual_emb,
-                "engine": "openai_vision",
-                "model_used": "gpt-4o-mini",
-                "provider": "OpenAI Multimodal Vision API",
-                "note": "Uncertain identification — please select candidate model below." if is_uncertain else "Visual identification via OpenAI Multimodal Vision AI."
-            }), 200
-
-    # C. Fallback: Local Vision Classifier Engine (Zero external network dependency)
-    local_res = classify_vehicle_local(cropped_pil)
-    local_res["visual_embedding"] = visual_emb
-    return jsonify(local_res), 200
+    return jsonify({
+        "success": True,
+        "vehicle_detected": True,
+        "label": label_str,
+        "make": ident["make"],
+        "model": ident["model"],
+        "generation": ident["generation"],
+        "year_estimate": ident["year_estimate"],
+        "body_type": ident["body_type"],
+        "confidence": conf_percent,
+        "identification": ident,
+        "confidence_breakdown": conf_obj,
+        "visual_evidence": vision_res.get("visual_evidence", []),
+        "ocr_evidence": vision_res.get("ocr_evidence", []),
+        "alternatives": vision_res.get("alternatives", []),
+        "needs_confirmation": vision_res.get("needs_confirmation", False),
+        "visual_embedding": visual_emb,
+        "engine": vision_res.get("debug_info", {}).get("engine", "multi_stage_vision_pipeline"),
+        "provider": vision_res.get("debug_info", {}).get("provider", "Apex Motors Vision Engine"),
+        "note": "Identification uncertain — please select or confirm candidate model below." if vision_res.get("needs_confirmation") else "Visual identification completed via multi-stage computer vision.",
+        "debug_info": vision_res.get("debug_info", {})
+    }), 200
 
 @app.route("/api/search", methods=["GET"])
 def search():
