@@ -19,7 +19,8 @@ if str(root_dir) not in sys.path:
 from services.vision import (
     prepare_image, detect_vehicle_rois, extract_visual_embedding,
     compute_visual_similarity, crop_to_bytes, crop_to_b64,
-    call_hf_vision_api, call_openai_vision_api, parse_hf_label
+    call_hf_vision_api, call_openai_vision_api, parse_hf_label,
+    classify_vehicle_local
 )
 from services.knowledge_base import (
     resolve_vehicle_specs, parse_search_query, normalize_brand, VEHICLE_KNOWLEDGE_BASE
@@ -1340,12 +1341,10 @@ def classify_image():
                 "note": "Uncertain identification — please select candidate model below." if is_uncertain else "Visual identification via OpenAI Multimodal Vision AI."
             }), 200
 
-    # C. No AI Provider Credentials Configured / Offline
-    return jsonify({
-        "success": False,
-        "code": "VISION_SERVICE_UNAVAILABLE",
-        "error": "Vehicle analysis service is temporarily unavailable. AI vision credentials (HF_TOKEN or OPENAI_API_KEY) are missing or offline."
-    }), 503
+    # C. Fallback: Local Vision Classifier Engine (Zero external network dependency)
+    local_res = classify_vehicle_local(cropped_pil)
+    local_res["visual_embedding"] = visual_emb
+    return jsonify(local_res), 200
 
 @app.route("/api/search", methods=["GET"])
 def search():

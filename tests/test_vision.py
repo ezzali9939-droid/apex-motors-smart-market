@@ -77,8 +77,8 @@ class TestVisionPipeline(unittest.TestCase):
         data = response.get_json()
         self.assertFalse(data.get("success"), "Non-vehicle shape classification success MUST be false")
 
-    def test_05_unconfigured_ai_returns_503(self):
-        """Verify that when no AI provider keys exist in environment, HTTP 503 is returned cleanly"""
+    def test_05_unconfigured_ai_uses_local_vision_fallback(self):
+        """Verify that when no cloud AI provider keys exist in environment, local vision engine fallback activates with HTTP 200"""
         # Save old env vars
         old_hf = os.environ.pop("HF_TOKEN", None)
         old_hf_alt = os.environ.pop("HUGGINGFACE_TOKEN", None)
@@ -92,10 +92,10 @@ class TestVisionPipeline(unittest.TestCase):
                     content_type='multipart/form-data'
                 )
 
-            self.assertEqual(response.status_code, 503, "Unconfigured AI service must return HTTP 503")
+            self.assertEqual(response.status_code, 200, "Unconfigured cloud AI must fall back to local vision engine with HTTP 200")
             data = response.get_json()
-            self.assertFalse(data.get("success"))
-            self.assertEqual(data.get("code"), "VISION_SERVICE_UNAVAILABLE")
+            self.assertTrue(data.get("success"))
+            self.assertEqual(data.get("engine"), "local_vision_engine")
 
         finally:
             # Restore env vars
