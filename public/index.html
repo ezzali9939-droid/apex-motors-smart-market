@@ -732,6 +732,25 @@ function showAnalysisPanel(data){
     altsSection.style.display = 'none';
   }
 
+  // Add VIR button if make & model available
+  const label = (data.label || '').trim();
+  const words = label.split(/\s+/);
+  const make  = words[0] || '';
+  const model = words.slice(1).join(' ') || '';
+  const existing = document.getElementById('vir-open-btn');
+  if(existing) existing.remove();
+  if(make && model){
+    const btn = document.createElement('button');
+    btn.id = 'vir-open-btn';
+    btn.className = 'ap-correct-btn';
+    btn.style.cssText = 'margin-top:10px;width:100%;background:rgba(56,189,248,.15);border:1px solid rgba(56,189,248,.4);';
+    btn.type = 'button';
+    btn.textContent = '🔬 View Full Vehicle Intelligence Report';
+    btn.addEventListener('click', () => openVIR(make, model));
+    const apMain = document.querySelector('.ap-main');
+    if(apMain) apMain.appendChild(btn);
+  }
+
   vis($('analysis-panel'), true);
 }
 
@@ -1658,29 +1677,6 @@ function searchFromVIR(){
   initiateSearch(q);
 }
 
-/* Update showAnalysisPanel to add VIR button */
-const _origShowAnalysis = showAnalysisPanel;
-function showAnalysisPanel(data){
-  _origShowAnalysis(data);
-  // Parse make/model from label for VIR button
-  const label = (data.label || '').trim();
-  const words = label.split(/\s+/);
-  const make  = words[0] || '';
-  const model = words.slice(1).join(' ') || '';
-  // Add VIR button if not already there
-  const existing = document.getElementById('vir-open-btn');
-  if(existing) existing.remove();
-  if(make && model){
-    const btn = document.createElement('button');
-    btn.id = 'vir-open-btn';
-    btn.className = 'ap-correct-btn';
-    btn.style.cssText = 'margin-top:10px;width:100%;background:rgba(56,189,248,.15);border:1px solid rgba(56,189,248,.4);';
-    btn.type = 'button';
-    btn.textContent = '🔬 View Full Vehicle Intelligence Report';
-    btn.addEventListener('click', () => openVIR(make, model));
-    const apMain = document.querySelector('.ap-main');
-    if(apMain) apMain.appendChild(btn);
-  }
 }
 </script>
 </body>
