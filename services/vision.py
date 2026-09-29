@@ -83,10 +83,10 @@ def detect_vehicle_rois(img):
     gy = np.abs(np.diff(gray, axis=0))
     edge_score = float((np.mean(gx) + np.mean(gy)) / 2.0)
 
-    if std_dev < 14.0 or edge_score < 1.6:
+    if std_dev < 8.0 or edge_score < 0.6:
         return {
             "is_car": False,
-            "reason": "The uploaded image does not appear to contain a vehicle (lacks visual contrast and vehicle edge structure). Please upload a clear exterior photo of a car.",
+            "reason": "The uploaded image does not appear to contain a vehicle. Please upload a clear photo of a car.",
             "rois": []
         }
 

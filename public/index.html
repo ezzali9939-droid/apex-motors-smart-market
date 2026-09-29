@@ -649,25 +649,26 @@ async function classifyImage(file, selectedCropId = null){
     hideSpinner();
 
     if(data.code === 'NON_CAR_IMAGE'){
-      setError(data.error || 'The uploaded image does not appear to contain a vehicle. Please upload a clear exterior photo of a car.');
+      setError(data.error || 'The uploaded image is blank or not a car photo. Please upload a clear photo of a car.');
       return;
     }
 
-    if(resp.status === 422 || data.code === 'VEHICLE_NOT_IDENTIFIED'){
-      setError('We couldn’t identify this vehicle reliably. Try another image showing the front or rear of the car clearly.');
+    if(data.code === 'VEHICLE_NOT_IDENTIFIED'){
+      setError('We couldn’t identify this vehicle model. Try selecting from the options below or typing your model manually.');
       return;
     }
 
-    if(resp.status === 503 || data.code === 'VISION_SERVICE_UNAVAILABLE'){
-      setError('Vehicle analysis service is temporarily unavailable.');
+    if(data.error){
+      setError(data.error);
       return;
     }
 
-    setError(data.error || 'Could not identify vehicle. Try a clearer exterior photo or type a manual search above.');
+    setError('Could not identify vehicle. Try typing your search above.');
   } catch(err){
+    console.error('[classify] Exception:', err);
     if(myReq !== reqCounter) return;
     hideSpinner();
-    setError('Vehicle analysis service is temporarily unavailable.');
+    setError(err.message || 'Could not process image file. Try typing your search above.');
   }
 }
 
