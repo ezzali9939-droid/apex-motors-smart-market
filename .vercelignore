@@ -3,3 +3,7 @@ __pycache__
 api/__pycache__
 *.pyc
 .git
+*.joblib
+*.cbm
+mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg
+tests/

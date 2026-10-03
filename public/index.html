@@ -446,7 +446,7 @@ h1 span{color:var(--blue);text-shadow:0 0 30px rgba(56,189,248,.5)}
     <div class="ap-header">
       <div class="ap-icon">🔍</div>
       <div class="ap-main">
-        <div class="ap-title">Vehicle Identification</div>
+        <div class="ap-title">AI VEHICLE IDENTIFICATION</div>
         <div class="ap-detected">
           <span class="ap-vehicle" id="ap-vehicle">—</span>
           <span class="ap-conf" id="ap-conf"></span>
@@ -613,7 +613,7 @@ async function classifyImage(file, selectedCropId = null){
   $('empty').style.display = 'none';
   allResults = [];
 
-  setSpinner('Uploading image…');
+  setSpinner('Analyzing image…');
 
   const fd = new FormData();
   fd.append('image', file);
@@ -622,7 +622,7 @@ async function classifyImage(file, selectedCropId = null){
   }
 
   try{
-    setSpinner('Analyzing vehicle with AI Vision…');
+    setSpinner('Identifying vehicle…');
     const resp = await fetch('/api/classify', { method:'POST', body:fd });
     if(myReq !== reqCounter) return;
     const data = await resp.json();
@@ -637,10 +637,11 @@ async function classifyImage(file, selectedCropId = null){
 
       // 2. Single vehicle identified or crop selected
       if(data.label){
-        setSpinner('Vehicle identified! Loading market listings & specs…');
+        setSpinner('Verifying model & specifications…');
         lastAnalysis = data;
         showAnalysisPanel(data);
         $('search-input').value = data.label;
+        setSpinner('Checking market prices…');
         initiateSearch(data.label, myReq);
         return;
       }
@@ -654,7 +655,12 @@ async function classifyImage(file, selectedCropId = null){
     }
 
     if(data.code === 'VEHICLE_NOT_IDENTIFIED'){
-      setError('We couldn’t identify this vehicle model. Try selecting from the options below or typing your model manually.');
+      setError(data.error || 'We couldn’t identify this vehicle model. Try selecting from options below or typing your model manually.');
+      return;
+    }
+
+    if(data.code === 'VISION_UNAVAILABLE'){
+      setError('⚠️ Vision AI is unconfigured server-side (GEMINI_API_KEY missing). Please type your car model above to search.');
       return;
     }
 
@@ -700,14 +706,23 @@ function showMultiVehicleSelector(file, vehicles){
 
 function showAnalysisPanel(data){
   $('ap-vehicle').textContent = data.label;
-  $('ap-conf').textContent = data.confidence ? `${data.confidence}% confidence` : '';
+  $('ap-conf').textContent = data.confidence_label ? `${data.confidence_label} CONFIDENCE` : '';
   
-  if(data.is_uncertain){
-    $('ap-note').textContent = '⚠️ Identification uncertain — please select or confirm candidate model below:';
+  let noteText = '<strong style="color:var(--blue)">📷 IDENTIFIED FROM IMAGE</strong><br>';
+  if(data.needs_confirmation){
+    noteText += '⚠️ Identification uncertain — model may be estimated. Confirm or select candidate below:';
   } else {
-    $('ap-note').textContent = data.note || 'Year, trim, and mechanical condition cannot be determined from appearance alone. Asking prices are not completed-sale prices.';
+    noteText += 'Vehicle model identified via Google Gemini Vision AI.';
+  }
+  
+  if(data.visible_badges && data.visible_badges.length > 0){
+    noteText += `<br><strong>Visible Badges:</strong> ${data.visible_badges.join(', ')}`;
+  }
+  if(data.year_estimate){
+    noteText += `<br><strong>Design Generation Years:</strong> ${data.year_estimate.from}–${data.year_estimate.to}`;
   }
 
+  $('ap-note').innerHTML = noteText;
   $('ap-correct-input').value = data.label;
 
   const altsEl = $('ap-alts');
@@ -745,7 +760,7 @@ function showAnalysisPanel(data){
     btn.className = 'ap-correct-btn';
     btn.style.cssText = 'margin-top:10px;width:100%;background:rgba(56,189,248,.15);border:1px solid rgba(56,189,248,.4);';
     btn.type = 'button';
-    btn.textContent = '🔬 View Full Vehicle Intelligence Report';
+    btn.textContent = '🔬 View Verified Vehicle Intelligence Specs';
     btn.addEventListener('click', () => openVIR(make, model));
     const apMain = document.querySelector('.ap-main');
     if(apMain) apMain.appendChild(btn);

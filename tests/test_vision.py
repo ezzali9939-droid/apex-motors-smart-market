@@ -2,18 +2,20 @@ import os
 import sys
 import unittest
 import io
+import json
+from unittest.mock import patch, MagicMock
 from PIL import Image, ImageDraw
 
-# Add parent directory to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from api.index import app
+from services.vision import VehicleVisionResponse, VehicleCandidate
 
 class TestVisionPipeline(unittest.TestCase):
     def setUp(self):
         self.app = app.test_client()
         self.app.testing = True
-        self.sample_image_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg"))
+        self.sample_image_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "public", "mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg"))
 
     def test_01_vision_health_endpoint(self):
         """Verify /api/vision-health returns structured diagnostic data"""
@@ -23,66 +25,10 @@ class TestVisionPipeline(unittest.TestCase):
         self.assertEqual(data.get("service"), "vehicle-vision")
         self.assertIn("status", data)
         self.assertIn("env_vars", data)
-        self.assertIn("active_provider", data)
 
-    def test_02_no_fake_perceptual_fallback(self):
-        """Verify that the system NEVER returns the fake 'Apex Perceptual Vision Engine' fallback"""
-        with open(self.sample_image_path, "rb") as img_file:
-            response = self.app.post(
-                '/api/classify',
-                data={'image': (img_file, 'sample_car.jpg')},
-                content_type='multipart/form-data'
-            )
-        
-        data = response.get_json()
-        model_used = str(data.get("model_used", ""))
-        engine = str(data.get("engine", ""))
-
-        self.assertNotIn("Perceptual Vision Engine", model_used, "Fake perceptual engine MUST NOT be used for vehicle classification!")
-        self.assertNotIn("Perceptual Vision Engine", engine, "Fake perceptual engine MUST NOT be returned in engine field!")
-
-    def test_03_negative_input_blank_image(self):
-        """Test negative input: Blank image must not be confidently classified as a vehicle"""
-        buf = io.BytesIO()
-        Image.new('RGB', (300, 300), (255, 255, 255)).save(buf, format='JPEG')
-        buf.seek(0)
-
-        response = self.app.post(
-            '/api/classify',
-            data={'image': (buf, 'blank.jpg')},
-            content_type='multipart/form-data'
-        )
-
-        self.assertIn(response.status_code, (422, 503), f"Blank image returned unexpected status {response.status_code}")
-        data = response.get_json()
-        self.assertFalse(data.get("vehicle_detected"), "Blank image vehicle_detected MUST be false")
-
-    def test_04_negative_input_abstract_shape(self):
-        """Test negative input: Abstract non-vehicle shape must not pass high-confidence classification"""
-        img = Image.new('RGB', (400, 400), (50, 50, 50))
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([50, 50, 350, 350], fill=(200, 100, 0))
-        buf = io.BytesIO()
-        img.save(buf, format='JPEG')
-        buf.seek(0)
-
-        response = self.app.post(
-            '/api/classify',
-            data={'image': (buf, 'abstract.jpg')},
-            content_type='multipart/form-data'
-        )
-
-        self.assertIn(response.status_code, (422, 503))
-        data = response.get_json()
-        self.assertFalse(data.get("vehicle_detected"), "Non-vehicle shape vehicle_detected MUST be false")
-
-    def test_05_unconfigured_ai_uses_local_vision_fallback(self):
-        """Verify that when no cloud AI provider keys exist in environment, local vision engine fallback activates with HTTP 200"""
-        old_hf = os.environ.pop("HF_TOKEN", None)
-        old_hf_alt = os.environ.pop("HUGGINGFACE_TOKEN", None)
-        old_oai = os.environ.pop("OPENAI_API_KEY", None)
-
-        try:
+    def test_02_unconfigured_ai_returns_vision_unavailable_503(self):
+        """Verify unconfigured GEMINI_API_KEY returns HTTP 503 VISION_UNAVAILABLE without fake fallbacks"""
+        with patch.dict(os.environ, {}, clear=True):
             with open(self.sample_image_path, "rb") as img_file:
                 response = self.app.post(
                     '/api/classify',
@@ -90,77 +36,156 @@ class TestVisionPipeline(unittest.TestCase):
                     content_type='multipart/form-data'
                 )
 
-            self.assertEqual(response.status_code, 200, "Unconfigured cloud AI must fall back to local vision engine with HTTP 200")
+            self.assertEqual(response.status_code, 503)
+            data = response.get_json()
+            self.assertFalse(data.get("success"))
+            self.assertEqual(data.get("code"), "VISION_UNAVAILABLE")
+
+    def test_03_non_car_image_rejection_422(self):
+        """Verify blank or non-car noise image returns HTTP 422 NON_CAR_IMAGE"""
+        buf = io.BytesIO()
+        Image.new('RGB', (300, 300), (255, 255, 255)).save(buf, format='JPEG')
+        buf.seek(0)
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_mock_key"}):
+            response = self.app.post(
+                '/api/classify',
+                data={'image': (buf, 'blank.jpg')},
+                content_type='multipart/form-data'
+            )
+
+            self.assertEqual(response.status_code, 422)
+            data = response.get_json()
+            self.assertFalse(data.get("vehicle_detected"))
+            self.assertEqual(data.get("code"), "NON_CAR_IMAGE")
+
+    @patch("services.vision.call_gemini_vision_api")
+    def test_04_gemini_vision_clear_car_identification_mocked(self, mock_gemini):
+        """Verify clear car identification via Gemini returns structured output & HTTP 200"""
+        mock_response = VehicleVisionResponse(
+            is_vehicle=True,
+            make="BMW",
+            model="X5",
+            generation="G05",
+            trim="M Sport",
+            year_from=2019,
+            year_to=2023,
+            body_type="SUV",
+            color="Black",
+            visible_badges=["BMW", "X5", "M Sport"],
+            visible_text=[],
+            confidence=0.94,
+            candidates=[VehicleCandidate(make="BMW", model="X3", generation="G01", confidence=0.65)],
+            visual_evidence=["BMW kidney grille", "X5 rear badge"]
+        )
+        mock_gemini.return_value = (mock_response, None)
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_mock_key"}):
+            with open(self.sample_image_path, "rb") as img_file:
+                response = self.app.post(
+                    '/api/classify',
+                    data={'image': (img_file, 'bmw_x5.jpg')},
+                    content_type='multipart/form-data'
+                )
+
+            self.assertEqual(response.status_code, 200)
             data = response.get_json()
             self.assertTrue(data.get("success"))
             self.assertTrue(data.get("vehicle_detected"))
-            self.assertEqual(data.get("engine"), "local_vision_engine")
+            self.assertEqual(data.get("make"), "BMW")
+            self.assertEqual(data.get("model"), "X5")
+            self.assertEqual(data.get("trim"), "M Sport")
+            self.assertEqual(data.get("confidence"), 94.0)
 
-        finally:
-            if old_hf: os.environ["HF_TOKEN"] = old_hf
-            if old_hf_alt: os.environ["HUGGINGFACE_TOKEN"] = old_hf_alt
-            if old_oai: os.environ["OPENAI_API_KEY"] = old_oai
+    @patch("services.vision.call_gemini_vision_api")
+    def test_05_gemini_vision_low_confidence_uncertain_car_mocked(self, mock_gemini):
+        """Verify confidence < 0.50 returns HTTP 422 VEHICLE_NOT_IDENTIFIED"""
+        mock_response = VehicleVisionResponse(
+            is_vehicle=True,
+            make="Toyota",
+            model="Corolla",
+            confidence=0.42,
+            visual_evidence=["Blurry silhouette"]
+        )
+        mock_gemini.return_value = (mock_response, None)
 
-    def test_06_body_type_filtering_no_suv_in_coupe_alternatives(self):
-        """Verify body type filtering prevents SUVs (like Kia Sportage) from appearing as alternatives to a Coupe"""
-        old_hf = os.environ.pop("HF_TOKEN", None)
-        old_hf_alt = os.environ.pop("HUGGINGFACE_TOKEN", None)
-        old_oai = os.environ.pop("OPENAI_API_KEY", None)
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_mock_key"}):
+            with open(self.sample_image_path, "rb") as img_file:
+                response = self.app.post(
+                    '/api/classify',
+                    data={'image': (img_file, 'blurry.jpg')},
+                    content_type='multipart/form-data'
+                )
 
-        try:
-            img = Image.open(self.sample_image_path).resize((800, 400))
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG")
-            buf.seek(0)
-
-            response = self.app.post(
-                '/api/classify',
-                data={'image': (buf, 'coupe.jpg')},
-                content_type='multipart/form-data'
-            )
-
+            self.assertEqual(response.status_code, 422)
             data = response.get_json()
+            self.assertFalse(data.get("success"))
+            self.assertEqual(data.get("code"), "VEHICLE_NOT_IDENTIFIED")
+
+    @patch("services.vision.call_gemini_vision_api")
+    def test_06_gemini_vision_medium_confidence_policy_mocked(self, mock_gemini):
+        """Verify confidence 0.50-0.69 displays make but sets model to None"""
+        mock_response = VehicleVisionResponse(
+            is_vehicle=True,
+            make="Mercedes-Benz",
+            model="C-Class",
+            confidence=0.62,
+            visual_evidence=["Mercedes emblem visible"]
+        )
+        mock_gemini.return_value = (mock_response, None)
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_mock_key"}):
+            with open(self.sample_image_path, "rb") as img_file:
+                response = self.app.post(
+                    '/api/classify',
+                    data={'image': (img_file, 'merc.jpg')},
+                    content_type='multipart/form-data'
+                )
+
             self.assertEqual(response.status_code, 200)
-            alts = [alt.get("label", "").lower() for alt in data.get("alternatives", [])]
-            for alt_str in alts:
-                self.assertNotIn("sportage", alt_str, "Kia Sportage SUV MUST NOT appear as an alternative for a sports coupe!")
-                self.assertNotIn("tucson", alt_str, "Hyundai Tucson SUV MUST NOT appear as an alternative for a sports coupe!")
-        finally:
-            if old_hf: os.environ["HF_TOKEN"] = old_hf
-            if old_hf_alt: os.environ["HUGGINGFACE_TOKEN"] = old_hf_alt
-            if old_oai: os.environ["OPENAI_API_KEY"] = old_oai
+            data = response.get_json()
+            self.assertEqual(data.get("make"), "Mercedes-Benz")
+            self.assertIsNone(data.get("model"))
+            self.assertTrue(data.get("needs_confirmation"))
 
-    def test_07_structured_vision_response(self):
-        """Verify response contains all required structured fields per specification"""
-        with open(self.sample_image_path, "rb") as img_file:
-            response = self.app.post(
-                '/api/classify',
-                data={'image': (img_file, 'car.jpg')},
-                content_type='multipart/form-data'
-            )
+    @patch("services.vision.call_gemini_vision_api")
+    def test_07_gemini_invalid_json_handling(self, mock_gemini):
+        """Verify malformed JSON from vision provider returns HTTP 422 VEHICLE_NOT_IDENTIFIED"""
+        mock_gemini.return_value = (None, {
+            "success": False,
+            "vehicle_detected": False,
+            "code": "VEHICLE_NOT_IDENTIFIED",
+            "error": "Invalid structured JSON format returned by vision model.",
+            "status_code": 422
+        })
 
-        data = response.get_json()
-        self.assertIn("vehicle_detected", data)
-        self.assertIn("identification", data)
-        self.assertIn("confidence_breakdown", data)
-        self.assertIn("visual_evidence", data)
-        self.assertIn("ocr_evidence", data)
-        self.assertIn("alternatives", data)
-        self.assertIn("needs_confirmation", data)
-        self.assertIn("debug_info", data)
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test_mock_key"}):
+            with open(self.sample_image_path, "rb") as img_file:
+                response = self.app.post(
+                    '/api/classify',
+                    data={'image': (img_file, 'car.jpg')},
+                    content_type='multipart/form-data'
+                )
 
-    def test_08_specifications_lookup_separated(self):
-        """Verify /api/vehicle-specs returns strict specs object matching canonical vehicle catalog"""
-        resp = self.app.get("/api/vehicle-specs?make=Mercedes-Benz&model=AMG GT&year=2019")
+            self.assertEqual(response.status_code, 422)
+            data = response.get_json()
+            self.assertEqual(data.get("code"), "VEHICLE_NOT_IDENTIFIED")
+
+    def test_08_specifications_lookup_verified_vs_unverified(self):
+        """Verify /api/vehicle-specs returns verified specs for database models and specs_status='not_verified' for unknown models"""
+        # 1. Verified model
+        resp = self.app.get("/api/vehicle-specs?make=Kia&model=Sportage&year=2024")
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertTrue(data.get("success"))
-        self.assertIn("vehicle_id", data)
-        self.assertIn("source_match", data)
-        self.assertIn("specifications", data)
-        specs = data["specifications"]
-        self.assertIsNotNone(specs.get("engine"))
-        self.assertIsNotNone(specs.get("horsepower"))
+        self.assertEqual(data.get("specs_status"), "verified")
+
+        # 2. Unknown model
+        resp_unverified = self.app.get("/api/vehicle-specs?make=UnknownMake&model=UnknownModel")
+        self.assertEqual(resp_unverified.status_code, 200)
+        data_unverified = resp_unverified.get_json()
+        self.assertFalse(data_unverified.get("success"))
+        self.assertEqual(data_unverified.get("specs_status"), "not_verified")
 
 if __name__ == "__main__":
     unittest.main()

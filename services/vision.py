@@ -1,104 +1,63 @@
 """
-Apex Motors — Rebuilt Multi-Stage Vehicle Vision Identification Pipeline
+Apex Motors — Official Computer Vision Vehicle Identification Service
 
-Pipeline Architecture:
-STAGE 1 — Image Quality Analysis & Vehicle Cropping (Resolution, contrast, edge density, ROI crop)
-STAGE 2 — Body Type Classification (SUV, Sedan, Coupe/Sports Car, Hatchback, Pickup, Van)
-STAGE 3 — Manufacturer Identification (Fine-grained computer vision & AI multimodal inference)
-STAGE 4 — OCR & Badge Detection (Extracts visible badges e.g. AMG, M, RS, 4MATIC, Sportage, Corolla)
-STAGE 5 — Model, Generation & Year Range Resolution + Sub-Confidence Scoring
-
-Strictly NO fake vehicles, default guesses, random fallbacks, or manufactured confidence scores.
-Unknown is returned when evidence is insufficient (< 50% confidence).
+Architecture & Policies:
+- Uses Google GenAI SDK (`google-genai`) with Gemini (`gemini-3.8-flash`).
+- Server-side GEMINI_API_KEY enforcement.
+- Strict Pydantic JSON schema validation (`VehicleVisionResponse`).
+- Strict Application-Side Confidence Policy:
+  * < 0.50 : VEHICLE_NOT_IDENTIFIED (HTTP 422)
+  * 0.50–0.69 : Make displayed if supported; Model remains Unknown
+  * 0.70–0.87 : Make & Model displayed; Trim remains Unknown
+  * >= 0.88 : Specific Trim/Generation allowed ONLY if supported by visible badges
+- Strict Year Policy: Year range (e.g. 2019–2023) preferred over invented single years.
+- ABSOLUTELY ZERO fake vehicle fallbacks, aspect-ratio guesses, or random selections.
+- If no vision API key is configured server-side: returns VISION_UNAVAILABLE (HTTP 503).
 """
 
 import os
-import re
 import io
+import re
 import json
 import base64
-import requests
+from typing import List, Optional, Dict, Any
 import numpy as np
 from PIL import Image, ImageOps
+from pydantic import BaseModel, Field, ValidationError
 
-HF_ROUTER_URL = "https://router.huggingface.co/hf-inference/models/dima806/car_models_image_detection"
+# Primary AI Model
+GEMINI_MODEL = "gemini-3.8-flash"
 
-# ── MODEL & GENERATION TAXONOMY CATALOG ─────────────────────────────────────
-GENERATION_MAP = {
-    ("Mercedes-Benz", "AMG GT"): {
-        "generation": "C190",
-        "years": {"from": 2015, "to": 2023},
-        "body_type": "Coupe",
-        "trims": ["GT", "GT S", "GT C", "GT R", "Black Series"]
-    },
-    ("Mercedes-Benz", "C-Class"): {
-        "generation": "W206",
-        "years": {"from": 2021, "to": 2025},
-        "body_type": "Sedan",
-        "trims": ["C 180", "C 200", "C 300", "C 43 AMG"]
-    },
-    ("Kia", "Sportage"): {
-        "generation": "NQ5",
-        "years": {"from": 2022, "to": 2025},
-        "body_type": "SUV",
-        "trims": ["LX", "EX", "SX", "GT-Line"]
-    },
-    ("Toyota", "Corolla"): {
-        "generation": "E210",
-        "years": {"from": 2019, "to": 2025},
-        "body_style": "Sedan",
-        "body_type": "Sedan",
-        "trims": ["Active", "Comfort", "GR-Sport"]
-    },
-    ("BMW", "3 Series"): {
-        "generation": "G20",
-        "years": {"from": 2019, "to": 2025},
-        "body_type": "Sedan",
-        "trims": ["318i", "320i", "330i", "M340i"]
-    },
-    ("Hyundai", "Tucson"): {
-        "generation": "NX4",
-        "years": {"from": 2021, "to": 2025},
-        "body_type": "SUV",
-        "trims": ["Smart", "Comfort", "N-Line"]
-    },
-    ("Audi", "A4"): {
-        "generation": "B9",
-        "years": {"from": 2016, "to": 2024},
-        "body_type": "Sedan",
-        "trims": ["35 TFSI", "40 TFSI", "S4"]
-    },
-    ("Nissan", "Sunny"): {
-        "generation": "N18",
-        "years": {"from": 2020, "to": 2025},
-        "body_type": "Sedan",
-        "trims": ["Base", "Mid", "Super Saloon"]
-    },
-    ("Porsche", "911"): {
-        "generation": "992",
-        "years": {"from": 2019, "to": 2025},
-        "body_type": "Coupe",
-        "trims": ["Carrera", "Carrera S", "Turbo S", "GT3"]
-    },
-    ("Volkswagen", "Golf"): {
-        "generation": "Mk8",
-        "years": {"from": 2020, "to": 2025},
-        "body_type": "Hatchback",
-        "trims": ["Life", "Style", "GTI", "R"]
-    }
-}
-
-KNOWN_BADGES = [
-    "AMG", "M", "RS", "GT", "Turbo", "4MATIC", "xDrive", "Quattro", "TSI", "TFSI",
-    "GDI", "T-GDI", "VVT-i", "Hybrid", "EQ", "Sportage", "Corolla", "C180", "C200", "320i"
-]
+# ── 1. PYDANTIC STRUCTURED VISION RESPONSE SCHEMAS ───────────────────────────
+class VehicleCandidate(BaseModel):
+    make: Optional[str] = Field(default=None, description="Plausible candidate make")
+    model: Optional[str] = Field(default=None, description="Plausible candidate model")
+    generation: Optional[str] = Field(default=None, description="Plausible candidate generation code")
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0, description="Candidate confidence score")
 
 
-# ── STAGE 1: IMAGE QUALITY ANALYSIS & PREPARATION ───────────────────────────
-def prepare_image(file_storage):
+class VehicleVisionResponse(BaseModel):
+    is_vehicle: bool = Field(description="True if image contains a clear exterior view of a motor vehicle")
+    make: Optional[str] = Field(default=None, description="The vehicle manufacturer brand name")
+    model: Optional[str] = Field(default=None, description="The specific vehicle model name")
+    generation: Optional[str] = Field(default=None, description="Generation code if discernible")
+    trim: Optional[str] = Field(default=None, description="Trim tier ONLY if visually verified by explicit badge text")
+    year_from: Optional[int] = Field(default=None, description="Estimated production start year for this generation")
+    year_to: Optional[int] = Field(default=None, description="Estimated production end year for this generation")
+    body_type: Optional[str] = Field(default=None, description="Body style e.g. SUV, Sedan, Coupe, Hatchback, Pickup, Van")
+    color: Optional[str] = Field(default=None, description="Primary exterior color of the vehicle")
+    visible_badges: List[str] = Field(default_factory=list, description="Text or logos of visible badges on vehicle body")
+    visible_text: List[str] = Field(default_factory=list, description="Any written text visible on vehicle or license plate")
+    confidence: float = Field(ge=0.0, le=1.0, description="Overall confidence score from 0.0 to 1.0")
+    candidates: List[VehicleCandidate] = Field(default_factory=list, description="Alternative candidate models")
+    visual_evidence: List[str] = Field(default_factory=list, description="Specific visual cues supporting identification")
+
+
+# ── 2. STAGE 1: IMAGE PREPARATION & VALIDATION ──────────────────────────────
+def prepare_image(file_storage) -> tuple[Optional[Image.Image], Optional[str]]:
     """
     Decodes uploaded file, verifies image validity, normalizes EXIF orientation,
-    and converts to RGB PIL Image.
+    converts to RGB PIL Image, and resizes appropriately.
     Returns (pil_image, None) or (None, error_str).
     """
     try:
@@ -123,16 +82,16 @@ def prepare_image(file_storage):
         img = ImageOps.exif_transpose(img)
         if img.mode != "RGB":
             img = img.convert("RGB")
+        img.thumbnail((1024, 1024), Image.LANCZOS)
         return img, None
     except Exception as ex:
         return None, f"INVALID_IMAGE: Image decoding failed: {ex}"
 
 
-def detect_vehicle_rois(img):
+def detect_vehicle_rois(img: Image.Image) -> Dict[str, Any]:
     """
-    STAGE 1: Analyzes contrast, edge density, and spatial structure.
-    Rejects non-car images (blank, solid colors, low contrast noise, documents).
-    Returns bounding box(es) for vehicle ROI cropping.
+    STAGE 1: Analyzes image quality, contrast, and edge density.
+    Rejects blank images, solid colors, low contrast noise, and document scans.
     """
     w, h = img.size
     small = img.resize((320, 240))
@@ -159,7 +118,7 @@ def detect_vehicle_rois(img):
             "rois": []
         }
 
-    # Horizontal projection for spatial vehicle ROI / multi-car splitting
+    # Horizontal projection for spatial vehicle ROI
     mid_gray = gray[int(240 * 0.12):int(240 * 0.88), :]
     h_proj = np.mean(np.abs(np.diff(mid_gray, axis=0)), axis=0)
     kernel = np.ones(9) / 9.0
@@ -212,467 +171,276 @@ def detect_vehicle_rois(img):
     }
 
 
-# ── STAGE 2: BODY TYPE CLASSIFICATION & SILHOUETTE ANALYSIS ──────────────────
-def classify_body_type(img, bbox=None):
+# ── 3. GEMINI VISION INFERENCE LAYER ─────────────────────────────────────────
+GEMINI_SYSTEM_PROMPT = """You are an expert Computer Vision Vehicle Identification System.
+Your task is to analyze the provided image and identify the exact motor vehicle.
+
+STRICT INSTRUCTIONS:
+1. Determine if the image contains a clear view of a motor vehicle (is_vehicle).
+2. Identify vehicle make, model, generation code (internal chassis or generation identifier), and body style.
+3. Identify estimated production year range (year_from and year_to) based on generation design cycle. DO NOT guess a single exact year unless an explicit model year badge is visible.
+4. Identify visible badges, logos, model emblems, trim badges.
+5. Identify trim ONLY if visually verified by an explicit badge in the photo. Otherwise leave trim as null.
+6. Provide an overall identification confidence score between 0.00 and 1.00 based strictly on visual clarity and certainty.
+7. List specific visual evidence cues supporting your identification.
+8. NEVER invent mechanical specifications (horsepower, engine cc, price, mileage). Focus strictly on visual vehicle identification.
+
+Return ONLY a valid JSON object strictly adhering to this schema:
+{
+  "is_vehicle": boolean,
+  "make": string or null,
+  "model": string or null,
+  "generation": string or null,
+  "trim": string or null,
+  "year_from": integer or null,
+  "year_to": integer or null,
+  "body_type": string or null,
+  "color": string or null,
+  "visible_badges": [string],
+  "visible_text": [string],
+  "confidence": float (0.0 to 1.0),
+  "candidates": [{"make": string, "model": string, "generation": string, "confidence": float}],
+  "visual_evidence": [string]
+}"""
+
+def call_gemini_vision_api(pil_img: Image.Image) -> tuple[Optional[VehicleVisionResponse], Optional[Dict[str, Any]]]:
     """
-    STAGE 2: Determines vehicle body type (Coupe/Sports Car, SUV, Sedan, Hatchback, Pickup, Van).
-    Prevents absurd candidate rankings (e.g. SUV appearing for a low sports coupe).
+    Executes vehicle identification using the official Google GenAI SDK (`google-genai`).
+    Returns (validated_response_object, None) or (None, error_dict).
     """
-    w, h = img.size
-    if bbox:
-        bw = bbox[2] - bbox[0]
-        bh = bbox[3] - bbox[1]
-    else:
-        bw, bh = w, h
-
-    aspect_ratio = bw / float(bh) if bh > 0 else 1.5
-
-    # Analyze upper-third vs lower-third luminance profile (stance height)
-    small = img.resize((128, 96)).convert("L")
-    arr = np.array(small, dtype=np.float32) / 255.0
-    
-    top_third_mean = float(np.mean(arr[:32, :]))
-    bottom_third_mean = float(np.mean(arr[64:, :]))
-    height_ratio = bh / float(h)
-
-    if aspect_ratio >= 1.60:
-        body_type = "Coupe"
-        confidence = 0.88
-        evidence = "Low-slung wide aspect ratio (aspect ratio >= 1.60)"
-    elif aspect_ratio <= 1.35 or (aspect_ratio <= 1.48 and top_third_mean < 0.40):
-        body_type = "SUV"
-        confidence = 0.88
-        evidence = "High stance, tall vertical proportions"
-    elif aspect_ratio <= 1.45:
-        body_type = "Hatchback"
-        confidence = 0.78
-        evidence = "Compact vertical rear silhouette"
-    else:
-        body_type = "Sedan"
-        confidence = 0.82
-        evidence = "Classic three-box sedan profile"
-
-    return {
-        "body_type": body_type,
-        "aspect_ratio": round(aspect_ratio, 2),
-        "confidence": confidence,
-        "evidence": evidence
-    }
-
-
-# ── STAGE 3 & 4: REMOTE AI INFERENCE & OCR BADGE REASONING ───────────────────
-def parse_hf_label(label_raw: str) -> dict:
-    """Parses HuggingFace label like 'Kia_Sportage_2022' or 'Mercedes-Benz_AMG_GT'."""
-    label = label_raw.replace("_", " ").strip()
-    parts = label.split()
-    make = parts[0] if len(parts) >= 1 else label
-    year = None
-    model_parts = []
-
-    for p in parts[1:]:
-        if re.match(r'^(19|20)\d{2}$', p):
-            year = int(p)
-        else:
-            model_parts.append(p)
-
-    model = " ".join(model_parts) if model_parts else ""
-    return {
-        "display_label": label,
-        "make": make,
-        "model": model,
-        "year_detected": year,
-    }
-
-
-def call_hf_vision_api(img_bytes: bytes) -> tuple:
-    """Executes computer vision inference via Hugging Face InferenceClient / Router API."""
-    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
-    if not hf_token:
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_key:
         return None, {
             "success": False,
-            "code": "VISION_SERVICE_UNAVAILABLE",
-            "error": "HF_TOKEN environment variable missing.",
+            "vehicle_detected": False,
+            "code": "VISION_UNAVAILABLE",
+            "error": "Server-side GEMINI_API_KEY environment variable is missing or unconfigured.",
             "status_code": 503
         }
 
     try:
-        from huggingface_hub import InferenceClient
-        client = InferenceClient(provider="hf-inference", token=hf_token)
-        hf_predictions = client.image_classification(img_bytes, model="dima806/car_models_image_detection")
-        
-        raw_list = []
-        for pred in hf_predictions:
-            lbl = getattr(pred, "label", None) or (pred.get("label") if isinstance(pred, dict) else "")
-            sc = getattr(pred, "score", None) or (pred.get("score") if isinstance(pred, dict) else 0.0)
-            raw_list.append({"label": str(lbl), "score": float(sc)})
-        
-        return {
-            "data": raw_list,
-            "model": "dima806/car_models_image_detection",
-            "provider": "Hugging Face InferenceClient"
-        }, None
-    except Exception as ex_hub:
-        print(f"[vision] HF Client exception: {ex_hub}. Trying direct router request...")
+        from google import genai
+        from google.genai import types
 
-    headers = {
-        "Authorization": f"Bearer {hf_token}",
-        "Accept": "application/json",
-        "Content-Type": "image/jpeg"
-    }
+        client = genai.Client(api_key=gemini_key)
 
-    try:
-        resp = requests.post(HF_ROUTER_URL, data=img_bytes, headers=headers, timeout=25)
-        if resp.status_code == 200:
-            data = resp.json()
-            if isinstance(data, list) and len(data) > 0:
-                raw_list = [{"label": str(x.get("label","")), "score": float(x.get("score",0.0))} for x in data]
-                return {
-                    "data": raw_list,
-                    "model": "dima806/car_models_image_detection",
-                    "provider": "Hugging Face Router API"
-                }, None
-        return None, {
-            "success": False,
-            "code": "VISION_SERVICE_UNAVAILABLE",
-            "error": f"HuggingFace vision service returned HTTP {resp.status_code}.",
-            "status_code": 503
-        }
-    except Exception as ex:
-        return None, {
-            "success": False,
-            "code": "VISION_SERVICE_UNAVAILABLE",
-            "error": f"Could not connect to HuggingFace vision service: {ex}",
-            "status_code": 503
-        }
+        # Convert PIL image to JPEG bytes for Gemini API
+        buf = io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=90)
+        img_bytes = buf.getvalue()
 
+        image_part = types.Part.from_bytes(
+            data=img_bytes,
+            mime_type="image/jpeg"
+        )
 
-def call_openai_vision_api(img_bytes: bytes) -> dict:
-    """Executes multimodal AI vision inference via OpenAI gpt-4o-mini if OPENAI_API_KEY is present."""
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    if not openai_key:
-        return None
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[image_part, GEMINI_SYSTEM_PROMPT],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+                max_output_tokens=700
+            )
+        )
 
-    b64_img = base64.b64encode(img_bytes).decode("utf-8")
-
-    headers = {
-        "Authorization": f"Bearer {openai_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Identify the vehicle in this photo. Return ONLY a valid JSON object with keys: "
-                                "\"vehicle_detected\" (boolean), \"make\" (string or null), \"model\" (string or null), "
-                                "\"generation\" (string or null), \"body_type\" (string or null), \"estimated_year_from\" (integer or null), "
-                                "\"estimated_year_to\" (integer or null), \"confidence\" (float 0.0 to 1.0), "
-                                "\"visual_evidence\" (array of strings), \"ocr_evidence\" (array of strings), "
-                                "\"alternatives\" (array of {make, model, confidence, body_type}). "
-                                "If the image is not a vehicle or cannot be identified with >= 0.50 confidence, set vehicle_detected to false."
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
-                    }
-                ]
+        raw_text = response.text.strip() if response and response.text else ""
+        if not raw_text:
+            return None, {
+                "success": False,
+                "vehicle_detected": False,
+                "code": "VEHICLE_NOT_IDENTIFIED",
+                "error": "Gemini Vision API returned an empty response.",
+                "status_code": 422
             }
-        ],
-        "response_format": {"type": "json_object"},
-        "temperature": 0.1,
-        "max_tokens": 350
-    }
 
-    try:
-        r = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=25)
-        if r.status_code == 200:
-            res_data = r.json()
-            content_str = res_data["choices"][0]["message"]["content"]
-            return json.loads(content_str)
+        # Parse and validate with Pydantic
+        # Extract JSON block if wrapped in markdown code fence
+        json_str = raw_text
+        if "```" in json_str:
+            match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", json_str)
+            if match:
+                json_str = match.group(1).strip()
+
+        parsed_data = json.loads(json_str)
+        validated = VehicleVisionResponse.model_validate(parsed_data)
+        return validated, None
+
+    except ValidationError as ve:
+        print(f"[vision] Pydantic validation error on Gemini output: {ve}")
+        return None, {
+            "success": False,
+            "vehicle_detected": False,
+            "code": "VEHICLE_NOT_IDENTIFIED",
+            "error": "Invalid structured JSON format returned by vision model.",
+            "status_code": 422
+        }
     except Exception as ex:
-        print(f"[vision] OpenAI Vision API call exception: {ex}")
-        return None
+        print(f"[vision] Gemini API Exception: {type(ex).__name__}: {ex}")
+        return None, {
+            "success": False,
+            "vehicle_detected": False,
+            "code": "VISION_UNAVAILABLE",
+            "error": f"Could not connect to Gemini Vision service: {type(ex).__name__}",
+            "status_code": 503
+        }
 
 
-# ── STAGE 5: REASONING PIPELINE & CANDIDATE FILTERING ──────────────────────
-def run_vision_pipeline(pil_img, img_bytes, target_bbox=None):
+# ── 4. STAGE 5: REASONING PIPELINE & APPLICATION-SIDE CONFIDENCE POLICY ──────
+def run_vision_pipeline(pil_img: Image.Image, img_bytes: bytes = None, target_bbox: list = None) -> Dict[str, Any]:
     """
-    Executes the complete multi-stage recognition pipeline.
+    Executes multi-stage vehicle vision identification with strict confidence rules.
     
-    Returns structured Vision Response Object per specification:
-    {
-      "vehicle_detected": bool,
-      "identification": { make, model, generation, year_estimate, body_type, trim },
-      "confidence": { overall, make, model, generation, year, trim },
-      "visual_evidence": [...],
-      "ocr_evidence": [...],
-      "alternatives": [...],
-      "needs_confirmation": bool,
-      "debug_info": { ... }
-    }
+    Confidence Policy Rules:
+    - < 0.50 : VEHICLE_NOT_IDENTIFIED (HTTP 422)
+    - 0.50–0.69 : Make displayed if supported; Model remains Unknown
+    - 0.70–0.87 : Make & Model displayed; Trim remains Unknown
+    - >= 0.88 : Specific Trim/Generation allowed ONLY if supported by visible badges
     """
-    # 1. Stage 2: Body Type Classification
-    body_res = classify_body_type(pil_img, target_bbox)
-    detected_body = body_res["body_type"]
+    # 1. Call Gemini Vision API
+    vision_data, err_dict = call_gemini_vision_api(pil_img)
+    if err_dict:
+        return err_dict
 
-    visual_evidence = [
-        f"Stance profile: {body_res['evidence']}",
-        f"Fascia aspect ratio: {body_res['aspect_ratio']}"
-    ]
-    ocr_evidence = []
-    raw_candidates = []
-    engine_used = "unknown"
-    provider_used = "none"
+    # 2. Check basic vehicle detection
+    if not vision_data.is_vehicle:
+        return {
+            "success": False,
+            "vehicle_detected": False,
+            "code": "NON_CAR_IMAGE",
+            "error": "The uploaded image does not appear to contain a motor vehicle. Please upload a clear photo of a car.",
+            "status_code": 422
+        }
 
-    # 2. Stage 3 & 4: Vision Model Call & OCR Text Analysis
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+    raw_conf = float(vision_data.confidence)
+    make = (vision_data.make or "").strip()
+    model = (vision_data.model or "").strip()
+    generation = (vision_data.generation or "").strip()
+    trim = (vision_data.trim or "").strip()
+    visible_badges = vision_data.visible_badges or []
 
-    if openai_key:
-        oai_res = call_openai_vision_api(img_bytes)
-        if oai_res and oai_res.get("vehicle_detected") and oai_res.get("make") and oai_res.get("model"):
-            engine_used = "openai_vision"
-            provider_used = "OpenAI gpt-4o-mini Multimodal Vision"
-            
-            main_make = oai_res.get("make")
-            main_model = oai_res.get("model")
-            main_gen = oai_res.get("generation")
-            main_body = oai_res.get("body_type") or detected_body
-            main_conf = float(oai_res.get("confidence") or 0.85)
+    # 3. Apply Application-Side Confidence Policy Rules
+    if raw_conf < 0.50:
+        return {
+            "success": False,
+            "vehicle_detected": True,
+            "code": "VEHICLE_NOT_IDENTIFIED",
+            "error": f"Vehicle detected, but visual evidence is insufficient for confident identification (confidence: {round(raw_conf * 100, 1)}%). Please upload a clearer exterior photo.",
+            "confidence": round(raw_conf * 100, 1),
+            "visual_evidence": vision_data.visual_evidence,
+            "status_code": 422
+        }
 
-            if oai_res.get("visual_evidence"):
-                visual_evidence.extend(oai_res["visual_evidence"])
-            if oai_res.get("ocr_evidence"):
-                ocr_evidence.extend(oai_res["ocr_evidence"])
+    # Policy Level 1: 0.50 - 0.69 -> Make displayed, Model remains Unknown
+    if 0.50 <= raw_conf < 0.70:
+        model = None
+        generation = None
+        trim = None
+        display_label = f"{make} (Model Unknown)" if make else "Unknown Vehicle"
+        needs_confirmation = True
 
-            raw_candidates.append({
-                "make": main_make,
-                "model": main_model,
-                "generation": main_gen,
-                "body_type": main_body,
-                "confidence": main_conf,
-                "year_from": oai_res.get("estimated_year_from"),
-                "year_to": oai_res.get("estimated_year_to")
-            })
+    # Policy Level 2: 0.70 - 0.87 -> Make & Model displayed, Trim remains Unknown
+    elif 0.70 <= raw_conf < 0.88:
+        trim = None
+        display_label = f"{make} {model}".strip() if (make and model) else (make or "Unknown Vehicle")
+        needs_confirmation = True
 
-            for alt in oai_res.get("alternatives", []):
-                raw_candidates.append({
-                    "make": alt.get("make"),
-                    "model": alt.get("model"),
-                    "generation": alt.get("generation"),
-                    "body_type": alt.get("body_type") or main_body,
-                    "confidence": float(alt.get("confidence") or 0.50),
-                    "year_from": None,
-                    "year_to": None
+    # Policy Level 3: >= 0.88 -> Trim allowed ONLY IF supported by visible badges
+    else:
+        # Check if trim is supported by visible badges
+        if trim and not any(trim.lower() in badge.lower() or badge.lower() in trim.lower() for badge in visible_badges):
+            trim = None  # Strip unsupported trim guess
+        
+        parts = [make, model, trim]
+        display_label = " ".join([p for p in parts if p]).strip()
+        needs_confirmation = False
+
+    # Build Year Range Estimate Object (Year Policy: range preferred over invented single year)
+    year_estimate = None
+    if vision_data.year_from:
+        year_estimate = {
+            "from": vision_data.year_from,
+            "to": vision_data.year_to or vision_data.year_from
+        }
+
+    # Build Alternatives Candidates list
+    alternatives = []
+    seen = {f"{make}:{model}".lower()}
+    for cand in vision_data.candidates:
+        c_make = (cand.make or "").strip()
+        c_model = (cand.model or "").strip()
+        if c_make and c_model:
+            key = f"{c_make}:{c_model}".lower()
+            if key not in seen:
+                seen.add(key)
+                alternatives.append({
+                    "label": f"{c_make} {c_model}",
+                    "make": c_make,
+                    "model": c_model,
+                    "generation": cand.generation,
+                    "confidence": round(cand.confidence * 100, 1)
                 })
 
-    elif hf_token:
-        ai_result, ai_err = call_hf_vision_api(img_bytes)
-        if ai_result and ai_result.get("data"):
-            engine_used = "huggingface"
-            provider_used = ai_result.get("provider", "Hugging Face Inference API")
-            
-            for item in ai_result["data"]:
-                lbl = item.get("label", "")
-                sc = float(item.get("score", 0.0))
-                if lbl and sc > 0.02:
-                    parsed = parse_hf_label(lbl)
-                    raw_candidates.append({
-                        "make": parsed["make"],
-                        "model": parsed["model"],
-                        "generation": None,
-                        "body_type": detected_body,
-                        "confidence": sc,
-                        "year_from": parsed["year_detected"],
-                        "year_to": parsed["year_detected"]
-                    })
+    conf_percent = round(raw_conf * 100, 1)
 
-    if not raw_candidates:
-        # Local multi-stage feature classification fallback when cloud AI keys are unconfigured
-        engine_used = "local_vision_engine"
-        provider_used = "Apex Motors Vision Engine (Local Feature Matcher)"
+    confidence_label = "HIGH"
+    if conf_percent < 70:
+        confidence_label = "LOW"
+    elif conf_percent < 88:
+        confidence_label = "MEDIUM"
 
-        if detected_body == "Coupe":
-            raw_candidates.append({
-                "make": "Mercedes-Benz", "model": "AMG GT",
-                "generation": "C190", "body_type": "Coupe",
-                "confidence": 0.88, "year_from": 2015, "year_to": 2023
-            })
-            raw_candidates.append({
-                "make": "Porsche", "model": "911",
-                "generation": "992", "body_type": "Coupe",
-                "confidence": 0.82, "year_from": 2019, "year_to": 2025
-            })
-        elif detected_body == "SUV":
-            raw_candidates.append({
-                "make": "Kia", "model": "Sportage",
-                "generation": "NQ5", "body_type": "SUV",
-                "confidence": 0.86, "year_from": 2022, "year_to": 2025
-            })
-            raw_candidates.append({
-                "make": "Hyundai", "model": "Tucson",
-                "generation": "NX4", "body_type": "SUV",
-                "confidence": 0.84, "year_from": 2021, "year_to": 2025
-            })
-        elif detected_body == "Hatchback":
-            raw_candidates.append({
-                "make": "Volkswagen", "model": "Golf",
-                "generation": "Mk8", "body_type": "Hatchback",
-                "confidence": 0.83, "year_from": 2020, "year_to": 2025
-            })
-        else: # Sedan
-            raw_candidates.append({
-                "make": "Toyota", "model": "Corolla",
-                "generation": "E210", "body_type": "Sedan",
-                "confidence": 0.85, "year_from": 2019, "year_to": 2025
-            })
-            raw_candidates.append({
-                "make": "Mercedes-Benz", "model": "C-Class",
-                "generation": "W206", "body_type": "Sedan",
-                "confidence": 0.84, "year_from": 2021, "year_to": 2025
-            })
-            raw_candidates.append({
-                "make": "BMW", "model": "3 Series",
-                "generation": "G20", "body_type": "Sedan",
-                "confidence": 0.83, "year_from": 2019, "year_to": 2025
-            })
-    filtered_candidates = []
-    for cand in raw_candidates:
-        make = cand["make"]
-        model = cand["model"]
-        conf = cand["confidence"]
-        cand_body = cand.get("body_type") or detected_body
-
-        if not make or not model:
-            continue
-
-        # Check generation catalog lookup
-        cat_key = (make, model)
-        gen_info = GENERATION_MAP.get(cat_key, {})
-        
-        expected_body = gen_info.get("body_type", cand_body)
-        
-        # STRICT CANDIDATE FILTER: If detected body type is Coupe/Sports Car and candidate is SUV, filter out!
-        if (detected_body == "Coupe" and expected_body == "SUV") or (detected_body == "SUV" and expected_body == "Coupe"):
-            continue
-
-        gen_code = cand.get("generation") or gen_info.get("generation")
-        y_from = cand.get("year_from") or (gen_info.get("years", {}).get("from"))
-        y_to = cand.get("year_to") or (gen_info.get("years", {}).get("to"))
-
-        filtered_candidates.append({
-            "make": make,
-            "model": model,
-            "generation": gen_code,
-            "body_type": expected_body,
-            "confidence": round(conf, 3),
-            "year_from": y_from,
-            "year_to": y_to
-        })
-
-    # Deduplicate & sort candidates by confidence
-    filtered_candidates.sort(key=lambda x: x["confidence"], reverse=True)
-
-    # 4. Strict Confidence & Insufficient Evidence Check
-    if not filtered_candidates or filtered_candidates[0]["confidence"] < 0.50:
-        return {
-            "vehicle_detected": False,
-            "identification": None,
-            "confidence": {
-                "overall": 0.0,
-                "make": 0.0,
-                "model": 0.0,
-                "generation": 0.0,
-                "year": 0.0,
-                "trim": 0.0
-            },
-            "visual_evidence": visual_evidence,
-            "ocr_evidence": ocr_evidence,
-            "alternatives": [],
-            "needs_confirmation": False,
-            "error": "Vehicle could not be identified reliably. Please upload a clear exterior photo of the car.",
-            "debug_info": {
-                "engine": engine_used,
-                "provider": provider_used,
-                "detected_body": detected_body,
-                "raw_candidates_count": len(raw_candidates),
-                "filtered_candidates_count": len(filtered_candidates)
-            }
-        }
-
-    # 5. Build Top Identification & Sub-confidence breakdown
-    top = filtered_candidates[0]
-    overall_conf = top["confidence"]
-
-    # Sub-confidences
-    make_conf = min(0.99, round(overall_conf * 1.08, 2))
-    model_conf = round(overall_conf, 2)
-    gen_conf = round(overall_conf * 0.88, 2) if top["generation"] else 0.0
-    year_conf = round(overall_conf * 0.75, 2) if top["year_from"] else 0.0
-    trim_conf = 0.0  # Trim remains 0.0 unless visually proven
-
-    year_estimate = None
-    if top["year_from"]:
-        year_estimate = {
-            "from": top["year_from"],
-            "to": top["year_to"] or top["year_from"]
-        }
-
-    # Build Alternatives list (excluding top candidate and keeping same/compatible body types)
-    alternatives = []
-    seen = {f"{top['make']}:{top['model']}"}
-    for alt in filtered_candidates[1:5]:
-        alt_key = f"{alt['make']}:{alt['model']}"
-        if alt_key not in seen:
-            seen.add(alt_key)
-            alternatives.append({
-                "label": f"{alt['make']} {alt['model']}",
-                "make": alt["make"],
-                "model": alt["model"],
-                "generation": alt["generation"],
-                "body_type": alt["body_type"],
-                "confidence": round(alt["confidence"] * 100, 1)
-            })
-
-    needs_confirmation = overall_conf < 0.80 or len(alternatives) > 0
+    if alternatives and len(alternatives) > 0:
+        top_alt_conf = alternatives[0]["confidence"]
+        if conf_percent - top_alt_conf <= 5.0:
+            confidence_label = "AMBIGUOUS"
 
     return {
+        "success": True,
         "vehicle_detected": True,
+        "label": display_label,
+        "confidence_label": confidence_label,
+        "make": make or None,
+        "model": model or None,
+        "generation": generation or None,
+        "trim": trim or None,
+        "year_estimate": year_estimate,
+        "body_type": vision_data.body_type or None,
+        "color": vision_data.color or None,
+        "confidence": conf_percent,
         "identification": {
-            "make": top["make"],
-            "model": top["model"],
-            "generation": top["generation"],
+            "make": make or None,
+            "model": model or None,
+            "generation": generation or None,
+            "trim": trim or None,
             "year_estimate": year_estimate,
-            "body_type": top["body_type"],
-            "trim": None
+            "body_type": vision_data.body_type or None,
+            "color": vision_data.color or None
         },
-        "confidence": {
-            "overall": round(overall_conf, 2),
-            "make": make_conf,
-            "model": model_conf,
-            "generation": gen_conf,
-            "year": year_conf,
-            "trim": trim_conf
+        "confidence_breakdown": {
+            "overall": raw_conf,
+            "make": min(1.0, round(raw_conf * 1.05, 2)) if make else 0.0,
+            "model": raw_conf if model else 0.0,
+            "generation": round(raw_conf * 0.90, 2) if generation else 0.0,
+            "trim": round(raw_conf * 0.95, 2) if trim else 0.0
         },
-        "visual_evidence": visual_evidence,
-        "ocr_evidence": ocr_evidence,
+        "visible_badges": visible_badges,
+        "visible_text": vision_data.visible_text or [],
+        "visual_evidence": vision_data.visual_evidence or [],
         "alternatives": alternatives,
         "needs_confirmation": needs_confirmation,
+        "engine": "gemini_vision_engine",
+        "provider": f"Google Gemini ({GEMINI_MODEL})",
         "debug_info": {
-            "engine": engine_used,
-            "provider": provider_used,
-            "detected_body": detected_body,
-            "raw_candidates": raw_candidates[:5],
-            "filtered_candidates": filtered_candidates[:5]
+            "model": GEMINI_MODEL,
+            "raw_confidence": raw_conf,
+            "confidence_policy_applied": True
         }
     }
 
 
-def extract_visual_embedding(img):
-    """Extracts a 100-dimension normalized visual feature vector for similarity search."""
+# ── 5. HELPER UTILITIES ──────────────────────────────────────────────────────
+def extract_visual_embedding(img: Image.Image) -> List[float]:
+    """Extracts a 100-dimension normalized visual feature vector for similarity comparison."""
     try:
         small = img.resize((128, 128)).convert("RGB")
         arr = np.array(small, dtype=np.float32) / 255.0
@@ -697,7 +465,7 @@ def extract_visual_embedding(img):
         return [0.0] * 100
 
 
-def compute_visual_similarity(emb1, emb2):
+def compute_visual_similarity(emb1: List[float], emb2: List[float]) -> float:
     """Calculates cosine similarity percentage (0.0 to 99.9%) between two embeddings."""
     if not emb1 or not emb2 or len(emb1) != len(emb2):
         return 0.0
@@ -711,7 +479,7 @@ def compute_visual_similarity(emb1, emb2):
         return 0.0
 
 
-def crop_to_bytes(img, bbox):
+def crop_to_bytes(img: Image.Image, bbox: list) -> bytes:
     """Crops image to bbox [x1, y1, x2, y2] and re-encodes as optimized JPEG bytes."""
     crop = img.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
     crop.thumbnail((640, 640), Image.LANCZOS)
@@ -720,7 +488,7 @@ def crop_to_bytes(img, bbox):
     return buf.getvalue()
 
 
-def crop_to_b64(img, bbox):
+def crop_to_b64(img: Image.Image, bbox: list) -> str:
     """Crops image to bbox and returns data URI base64 string for frontend preview."""
     crop = img.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
     crop.thumbnail((280, 200), Image.LANCZOS)

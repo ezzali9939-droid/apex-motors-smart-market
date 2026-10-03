@@ -1,7 +1,7 @@
 """
 Apex Motors — End-to-End Vision & Intelligence Test Suite
-Tests real vehicle recognition, ROI detection, cropping, non-car rejection,
-multi-vehicle selection, specification lookups, market search, and PDF/valuation logic.
+Tests vehicle ROI detection, cropping, non-car rejection,
+multi-vehicle selection, specification lookups, market search, and market statistics logic.
 """
 
 import os
@@ -21,7 +21,7 @@ class TestApexMotorsE2E(unittest.TestCase):
     def setUp(self):
         self.app = app.test_client()
         self.app.testing = True
-        self.sample_car_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg"))
+        self.sample_car_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "public", "mercedes-amg-gt3-speed-blur-desktop-wallpaper-cover.jpg"))
 
     def test_01_non_car_rejection_blank_image(self):
         """Verify non-car blank image is rejected with code NON_CAR_IMAGE or 422 status"""
@@ -53,7 +53,7 @@ class TestApexMotorsE2E(unittest.TestCase):
             data={"image": (buf, "abstract.jpg")},
             content_type="multipart/form-data"
         )
-        self.assertIn(response.status_code, (422, 503))
+        self.assertEqual(response.status_code, 422)
         data = response.get_json()
         self.assertFalse(data.get("success"))
 
@@ -73,7 +73,6 @@ class TestApexMotorsE2E(unittest.TestCase):
 
     def test_04_multi_car_detection_flow(self):
         """Verify multi-car detection generates distinct crop bounding boxes when multiple cars exist"""
-        # Create realistic synthetic multi-car image with texture/gradients
         arr = np.random.randint(20, 60, (400, 800, 3), dtype=np.uint8)
         img = Image.fromarray(arr)
         draw = ImageDraw.Draw(img)
@@ -98,23 +97,18 @@ class TestApexMotorsE2E(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertTrue(data.get("success"))
-        self.assertEqual(data.get("make"), "Kia")
+        self.assertEqual(data.get("specs_status"), "verified")
+        self.assertEqual(data.get("manufacturer"), "Kia")
         self.assertEqual(data.get("model"), "Sportage")
         self.assertIn("dimensions", data)
-        self.assertGreater(len(data.get("variants", [])), 0)
 
-    def test_06_market_search_and_valuation(self):
-        """Verify market search returns listings with valuation deal labels and valid URLs"""
+    def test_06_market_search_and_stats(self):
+        """Verify market search returns listings with market stats and valid URLs"""
         resp = self.app.get("/api/search?q=Toyota+Corolla&page=1")
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertIn("results", data)
-        results = data.get("results", [])
-        if results:
-            first = results[0]
-            self.assertIn("name", first)
-            self.assertIn("price", first)
-            self.assertIn("predicted_fair_price", first)
+        self.assertIn("price_stats", data)
 
 if __name__ == "__main__":
     unittest.main()
